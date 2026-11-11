@@ -1,0 +1,44 @@
+dshrefine
+DeepSeek Harness UI plugin bundles.
+
+This product includes software derived from the following projects.
+
+1. dsh-split-pane 0.1.0 (https://github.com/rainfd/dsh-split-pane, commit 6b4f9ca),
+   MIT License, Copyright (c) 2026 dsh-split-pane contributors.
+   `bundles/split/src/layout/tree.ts` and `bundles/split/src/client/focus.ts` are
+   adapted from it.
+
+2. herdr (https://github.com/herdrdev/herdr), Apache License 2.0.
+   Layout fitting, divider fitting and restore behaviour were rewritten from it;
+   no herdr code is included.
+
+3. ThinkRail (https://github.com/JetBrains/thinkrail), baseline commit 3bee4f1,
+   Apache License 2.0, Copyright 2026 JetBrains s.r.o.
+   Parts of the component kit in `packages/ui` are adapted from it; the files were
+   rewritten as a standalone kit. ThinkRail and JetBrains names and brand assets are
+   not used to identify this product.
+
+4. DeepSeek Harness 0.2.1 (https://github.com/deepseek-ai/dsh), MIT License,
+   Copyright (c) 2026 DeepSeek.
+   The bundles are written against its public plugin APIs; small typed adapters
+   mirror declarations from `@deepseek-ai/dsh-client-ui-*` packages.
+
+The MIT License text below applies to items 1 and 4:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

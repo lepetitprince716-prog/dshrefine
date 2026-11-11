@@ -1,0 +1,18 @@
+# Auto-background long commands.
+#
+# DeepSeek Harness already hands a foreground command to its job runtime when the command outlives
+# its timeout: the model gets "[still running after <timeoutMs>ms; moved to background job <id>]"
+# back immediately and reads the rest with job_output. Lowering the executor budget therefore
+# turns every long build, test run or server start into a background job without blocking the
+# conversation.
+#
+# Apply it as an extra profile patch:
+#
+#   dsh --profile desktop --patch <this file>
+#
+# 30s is a starting point. Raise it when you usually wait for medium commands; lower it (10s) when
+# you prefer everything long to run in the background.
+- id: bash
+  name: '@deepseek-ai/dsh-bash-local'
+  config:
+    timeoutMs: 30000

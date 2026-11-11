@@ -1,0 +1,23 @@
+{
+	"name": "dshrefine",
+	"private": true,
+	"type": "module",
+	"packageManager": "bun@1.4.2",
+	"workspaces": [
+		"packages/*",
+		"bundles/*"
+	],
+	"scripts": {
+		"test": "bun test",
+		"typecheck": "tsc --noEmit -p packages/ui/tsconfig.json && tsc --noEmit -p bundles/split/tsconfig.json && tsc --noEmit -p bundles/refine/tsconfig.json",
+		"build": "bun bundles/split/build.ts && bun bundles/refine/build.ts",
+		"lint": "biome check .",
+		"format": "biome format --write ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"@types/bun": "1.4.3",
+		"@types/node": "26.6.5",
+		"typescript": "7.0.2"
+	}
+}

@@ -1,0 +1,5 @@
+# Host row of the @refine/split bundle. The host half is empty; the row makes the bundle's
+# browser module part of the profile.
+- insert:
+    - id: split
+      name: '@refine/split'

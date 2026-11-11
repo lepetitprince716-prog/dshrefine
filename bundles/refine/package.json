@@ -1,0 +1,44 @@
+{
+	"name": "@refine/refine",
+	"version": "0.1.0",
+	"description": "Rewind and background control for DeepSeek Harness conversations.",
+	"private": true,
+	"type": "module",
+	"license": "MIT",
+	"exports": {
+		".": "./dist/index.js",
+		"./client": "./dist/client.js",
+		"./locale/*.json": "./locale/*.json",
+		"./icon": "./icons/refine.svg"
+	},
+	"files": [
+		"dist",
+		"locale",
+		"icons",
+		"cordis.patch.yml",
+		"README.md"
+	],
+	"scripts": {
+		"build": "bun build.ts",
+		"typecheck": "tsc --noEmit -p tsconfig.json"
+	},
+	"dsh": {
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		},
+		"client": {
+			"platform": "web",
+			"immediately": true,
+			"inject": [
+				"@deepseek-ai/dsh-client-ui-conversation"
+			]
+		}
+	},
+	"devDependencies": {
+		"@refine/ui": "workspace:*",
+		"@types/react": "18.3.28",
+		"@types/react-dom": "18.3.7",
+		"react": "18.3.1",
+		"react-dom": "18.3.1"
+	}
+}

@@ -1,0 +1,4 @@
+# Host row of the @refine/refine bundle: the rewind and background routes plus the tool gate.
+- insert:
+    - id: refine
+      name: '@refine/refine'

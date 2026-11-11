@@ -1,0 +1,3 @@
+[test]
+# Loads react-dom inside the shared happy-dom window before any test file (see the file header).
+preload = ["./src/testing/preload.ts"]

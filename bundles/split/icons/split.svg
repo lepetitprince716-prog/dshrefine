@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>Split</title>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#3c6fd1"/>
+  <rect x="15" y="16" width="34" height="32" rx="4" fill="none" stroke="#fff" stroke-width="4"/>
+  <path d="M32 16v32M32 32h17" fill="none" stroke="#fff" stroke-width="4"/>
+</svg>
