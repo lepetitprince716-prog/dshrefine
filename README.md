@@ -105,7 +105,7 @@ for `localStorage` state) and `--patch <file>` (extra profile patch, for example
 ```
 packages/ui            @refine/ui — the component kit (buttons, overlays, diff view, tokens)
 bundles/split          @refine/split — pane tree, drag/drop, home surface, flat styles
-bundles/refine         @refine/refine — rewind (host route + dialog), background preview
+bundles/refine         @refine/refine — rewind (host route + dialog), long-command guidance for background jobs
 extras/               optional profile patches
 scripts/               dev instance helper
 ```

@@ -1,6 +1,6 @@
 # @refine/refine
 
-Rewind for DeepSeek Harness conversations, plus a preview of background detach.
+Rewind for DeepSeek Harness conversations, plus the guidance that keeps long commands off the turn.
 
 ## Rewind
 
