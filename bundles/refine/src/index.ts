@@ -79,6 +79,13 @@ interface HostContext {
 		event: "agent/created",
 		listener: (payload: { readonly agent: AgentLike }) => void,
 	): () => void;
+	on(
+		event: "agent/pre-step",
+		listener: (
+			payload: { readonly agent: AgentLike },
+			next: () => Promise<unknown>,
+		) => Promise<unknown>,
+	): () => void;
 	effect(execute: () => (() => void) | void, label?: string): void;
 	readonly logger?: { warn(...args: unknown[]): void };
 }
@@ -173,7 +180,9 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 	 * `execute` is carried over unchanged, so schema, presentation, budgets and sandbox behaviour
 	 * stay exactly those of the shipped tool; only the wait is raced.
 	 */
+	const installed = new WeakSet<object>();
 	const installGate = (agent: AgentLike): void => {
+		if (installed.has(agent)) return;
 		const base = ctx.tools.get("bash", agent);
 		if (base === undefined) return;
 		const wrapped: ToolDefinitionLike = {
@@ -201,8 +210,10 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 		};
 		try {
 			agent.ctx.tools.register(wrapped);
-		} catch (cause) {
-			ctx.logger?.warn("[refine] bash gate not installed", cause);
+			installed.add(agent);
+		} catch {
+			// A preset that registers its own agent-scope `bash` owns the layer; the gate is retried
+			// before the next step, after that preset has finished composing.
 		}
 	};
 
@@ -224,6 +235,13 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 
 	ctx.on("agent/created", (payload) => {
 		installGate(payload.agent);
+	});
+
+	// A preset may register its own tools after `agent/created`; installing again before each
+	// step lands the gate above whatever the preset composed for the Agent.
+	ctx.on("agent/pre-step", async (payload, next) => {
+		installGate(payload.agent);
+		return next();
 	});
 
 	ctx.effect(
