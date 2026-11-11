@@ -23,10 +23,15 @@ popularised. Nothing is copied from a closed product.
 
 - Up to 8 panes in a binary tree, drag a session row or a pane header to place it, dividers with
   keyboard support, one-pane-at-a-time fallback on narrow surfaces.
-- **A new pane opens a home surface**: project list, a folder path for a new project, and the
-  agent modes the deployment composes (standard, minimal, creator, PTC — whatever the roster
-  reports). Start there and the conversation is created in that project with that mode.
-- Jump to an existing conversation from the same surface.
+- **Every new conversation in a pane starts on a home surface**: the project list, a folder path
+  for a new project, a folder chooser (the desktop window's own native dialog, else the
+  deployment's directory picker), and the agent modes the deployment composes (standard, minimal,
+  creator, PTC — whatever the roster reports). Start there and the conversation is created in
+  that project with that mode. The pane `+` button, a new-conversation drop, the split buttons
+  and, while a split is open, the sidebar's New session button all land here, so nothing is
+  silently created in the main view's project any more.
+- Jump to an existing conversation from the same surface; its "new" action returns to the home
+  surface rather than creating a Session in an inherited directory.
 - **Flat panes**: no card, no shadow, no accent ring. Panes tile edge to edge and a hairline
   divider separates them; the active pane is marked by its header, not by a frame around the
   conversation.

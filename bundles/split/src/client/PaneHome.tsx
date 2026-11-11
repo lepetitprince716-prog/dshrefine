@@ -26,6 +26,8 @@ export interface PaneHomeProps {
 		readonly path?: string;
 		readonly agentPreset?: string;
 	}) => Promise<void>;
+	/** The host's folder chooser (the native one on a desktop window); `null` when cancelled. */
+	readonly onPickFolder: () => Promise<string | null>;
 	readonly onOpenExisting: () => void;
 	readonly t: Translate;
 }
@@ -33,12 +35,21 @@ export interface PaneHomeProps {
 const ROW_STYLE: CSSProperties = {};
 
 export function PaneHome(props: PaneHomeProps): ReactNode {
-	const { workspaces, workspacesReady, defaultWorkspaceId, presets, defaultPreset, onStart, t } =
-		props;
+	const {
+		workspaces,
+		workspacesReady,
+		defaultWorkspaceId,
+		presets,
+		defaultPreset,
+		onStart,
+		onPickFolder,
+		t,
+	} = props;
 	const [workspaceId, setWorkspaceId] = useState<string | undefined>(defaultWorkspaceId);
 	const [path, setPath] = useState("");
 	const [preset, setPreset] = useState<string | undefined>(defaultPreset);
 	const [busy, setBusy] = useState(false);
+	const [picking, setPicking] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	const selected = useMemo(
@@ -46,12 +57,14 @@ export function PaneHome(props: PaneHomeProps): ReactNode {
 		[workspaces, workspaceId],
 	);
 	const chosenPreset = preset ?? defaultPreset;
+	const typedPath = path.trim();
+	// A path typed (or chosen) is the project when no listed Workspace is selected.
+	const destination = selected === undefined ? typedPath : selected.path;
 
 	const start = (event?: FormEvent): void => {
 		event?.preventDefault();
 		if (busy) return;
-		const trimmed = path.trim();
-		if (workspaceId === undefined && trimmed === "") {
+		if (workspaceId === undefined && typedPath === "") {
 			setError(t("home.needProject"));
 			return;
 		}
@@ -59,12 +72,32 @@ export function PaneHome(props: PaneHomeProps): ReactNode {
 		setError(null);
 		onStart({
 			...(workspaceId === undefined ? {} : { workspaceId }),
-			...(workspaceId === undefined ? { path: trimmed } : {}),
+			...(workspaceId === undefined ? { path: typedPath } : {}),
 			...(chosenPreset === undefined ? {} : { agentPreset: chosenPreset }),
 		}).catch((cause: unknown) => {
 			setError(t("picker.createFailed", { message: String((cause as Error)?.message ?? cause) }));
 			setBusy(false);
 		});
+	};
+
+	// The host owns the chooser: the desktop window answers with its own native dialog, other
+	// deployments with the directory picker composed on the host. Cancelling changes nothing.
+	const browse = (): void => {
+		if (picking) return;
+		setPicking(true);
+		setError(null);
+		onPickFolder().then(
+			(picked) => {
+				setPicking(false);
+				if (picked === null || picked === "") return;
+				setWorkspaceId(undefined);
+				setPath(picked);
+			},
+			(cause: unknown) => {
+				setPicking(false);
+				setError(t("home.pickFailed", { message: String((cause as Error)?.message ?? cause) }));
+			},
+		);
 	};
 
 	return (
@@ -111,26 +144,20 @@ export function PaneHome(props: PaneHomeProps): ReactNode {
 						placeholder={t("home.pathPlaceholder")}
 						aria-label={t("home.pathPlaceholder")}
 						onFocus={() => setWorkspaceId(undefined)}
-						onKeyDown={(event) => {
-							if (event.key !== "Enter") return;
-							event.preventDefault();
-							if (path.trim() !== "") setWorkspaceId(undefined);
-							setError(null);
-						}}
 					/>
 					<Button
 						size="sm"
 						variant="secondary"
-						onClick={() => {
-							if (path.trim() !== "") setWorkspaceId(undefined);
-							setError(null);
-						}}
+						icon={<Icon name="folder-open" size={14} />}
+						loading={picking}
+						disabled={busy}
+						onClick={browse}
 					>
-						{t("home.usePath")}
+						{picking ? t("home.browsing") : t("home.browse")}
 					</Button>
 				</div>
-				{selected === undefined ? null : (
-					<span className="dsp-home-selected">{t("home.selected", { path: selected.path })}</span>
+				{destination === "" ? null : (
+					<span className="dsp-home-selected">{t("home.selected", { path: destination })}</span>
 				)}
 			</section>
 

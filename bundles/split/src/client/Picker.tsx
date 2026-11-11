@@ -1,6 +1,6 @@
-// The body of a pane without a Session: pick an existing Session or create one in the same
-// directory. A blank Session is created through `sessions.create`, never through the hero
-// picker, which would navigate the main selection (lane-c-dsh-internals.md section 3).
+// The body of a pane without a Session: pick an existing Session, or go back to the home surface
+// where a new conversation's project and mode are chosen. A blank Session is never created here:
+// the host's hero picker would navigate the main selection (lane-c-dsh-internals.md section 3).
 import { Button, Icon, TextInput } from "@refine/ui";
 import { type KeyboardEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import type { SessionListState, SessionSummary } from "../dsh-types.d.ts";
@@ -45,7 +45,8 @@ export interface PickerProps {
 	readonly useSessions: <S>(selector: (state: SessionListState) => S) => S;
 	readonly shown: ReadonlySet<SessionId>;
 	readonly onPick: (sessionId: SessionId) => void;
-	readonly onCreate: () => Promise<void>;
+	/** Return to the home surface to plan a new conversation. */
+	readonly onNew: () => void;
 	readonly t: Translate;
 }
 
@@ -62,11 +63,9 @@ function moveFocus(listElement: HTMLElement | null, from: Element | null, delta:
 
 const wholeList = (state: SessionListState): SessionListState => state;
 
-export function Picker({ useSessions, shown, onPick, onCreate, t }: PickerProps): ReactNode {
+export function Picker({ useSessions, shown, onPick, onNew, t }: PickerProps): ReactNode {
 	const list = useSessions(wholeList);
 	const [filter, setFilter] = useState("");
-	const [creating, setCreating] = useState(false);
-	const [error, setError] = useState<string | null>(null);
 	const rows = useMemo(() => pickableSessions(list, shown, filter), [list, shown, filter]);
 	const listRef = useRef<HTMLUListElement>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -87,13 +86,7 @@ export function Picker({ useSessions, shown, onPick, onCreate, t }: PickerProps)
 	};
 
 	const create = (): void => {
-		setCreating(true);
-		setError(null);
-		onCreate()
-			.catch((cause: unknown) => {
-				setError(t("picker.createFailed", { message: String((cause as Error)?.message ?? cause) }));
-			})
-			.finally(() => setCreating(false));
+		onNew();
 	};
 
 	return (
@@ -111,21 +104,10 @@ export function Picker({ useSessions, shown, onPick, onCreate, t }: PickerProps)
 					placeholder={t("picker.filter")}
 					aria-label={t("picker.filter")}
 				/>
-				<Button
-					size="md"
-					variant="primary"
-					icon={<Icon name="plus" size={14} />}
-					loading={creating}
-					onClick={create}
-				>
-					{creating ? t("picker.creating") : t("picker.new")}
+				<Button size="md" variant="primary" icon={<Icon name="plus" size={14} />} onClick={create}>
+					{t("picker.new")}
 				</Button>
 			</div>
-			{error === null ? null : (
-				<div className="dsp-picker-error" role="alert">
-					{error}
-				</div>
-			)}
 			{rows.length === 0 ? (
 				<div className="dsp-picker-empty">
 					{filter.trim() === "" ? t("picker.empty") : t("picker.noMatch")}

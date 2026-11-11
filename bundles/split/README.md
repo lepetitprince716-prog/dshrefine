@@ -12,9 +12,21 @@ for the agent-mode roster.
 - Each pane retains its Session in an effect (source `dshSplit`), wraps it in `SessionProvider`
   and renders the `conversation.content` factory with `variant: "embedded"` and `hero: false`
   through the session-scoped child slot `dsh-split.pane`.
-- An empty pane renders its **home surface**: the Workspace list, a folder path for a new
-  Workspace, the agent-mode chips from `/api/split/presets`, and a link to the session picker.
-  Starting there creates the Session with the chosen Workspace and `agentPreset`.
+- An empty pane renders its **home surface**: the Workspace list, a typed folder path, a folder
+  chooser, the agent-mode chips from `/api/split/presets`, and a link to the session picker.
+  Starting there creates the Session with the chosen Workspace (or registers the chosen folder
+  as one) and `agentPreset`.
+- Every new-conversation action opens that surface instead of creating a Session: the pane `+`
+  header button, the split buttons and a new-conversation drop add a home pane, a new
+  conversation dropped on a pane's centre empties that pane, and while a split is open the
+  sidebar's **New session** button (host-owned, intercepted before its delegated click) also
+  adds a home pane. Outside a split that button keeps its shipped behaviour, and a modified
+  click on it always passes through.
+- The home surface preselects the project of the Session its pane split from, and still lets the
+  user pick another project, type a path, or choose a folder.
+- The folder chooser is the desktop window's `__DSH_DIRECTORY_PICKER__` bridge (native, parented
+  to the window) when present; otherwise it asks `uiWorkspace.pickDirectory()`. A cancelled
+  chooser changes nothing.
 - The layout is a binary tree (at most 8 panes, ratios 0.1-0.9). Panes tile with no gap; a
   hairline divider is the only separation. Closing the focused pane returns focus to the previous
   one; closing the second-to-last pane leaves split mode.

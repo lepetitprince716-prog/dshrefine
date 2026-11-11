@@ -13,7 +13,12 @@ import type {
 import { STORAGE_KEY } from "../layout/storage.ts";
 import { createAnchorStore, SplitAnchor } from "./anchor.ts";
 import { createSplitController, type HostPorts } from "./controller.ts";
-import { createDragStore, measureCenterColumn, trackHostDrags } from "./drag.ts";
+import {
+	createDragStore,
+	measureCenterColumn,
+	trackHostDrags,
+	trackHostNewSession,
+} from "./drag.ts";
 import { requestPaneFocus, trackKeyboardNavigation } from "./focus.ts";
 import { NS, registerLocale, type Translate } from "./locale.ts";
 import { SplitOverlay } from "./Overlay.tsx";
@@ -31,6 +36,11 @@ const MENU_ITEM_ORDER = 500;
 const HEADER_BUTTON_ID = "dsh-split.split";
 /** Last of the header utilities, next to the right sidebar's corner button. */
 const HEADER_BUTTON_ORDER = 900;
+
+/** The desktop window's own folder chooser, parented to the window (preload bridge). */
+interface DesktopDirectoryPicker {
+	pick(): Promise<string | null>;
+}
 
 /** Required services; `shortcuts` is optional and reached through `ctx.inject`. */
 export const inject = ["slots", "locale", "sessions", "uiWorkspace", "sidebarRight"];
@@ -128,7 +138,8 @@ export function apply(ctx: ClientContext): void {
 					...(agentPreset === undefined ? {} : { agentPreset }),
 				});
 			const cwd =
-				options?.path ?? (near === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[near]?.cwd);
+				options?.path ??
+				(near === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[near]?.cwd);
 			return ctx.sessions.create({
 				...(cwd === undefined ? {} : { cwd }),
 				...(agentPreset === undefined ? {} : { agentPreset }),
@@ -137,6 +148,15 @@ export function apply(ctx: ClientContext): void {
 		createFailed(error) {
 			console.error("[dsh-split] creating a conversation failed", error);
 			overlay.toast({ text: t("toast.createFailed"), tone: "error" });
+		},
+		async pickFolder() {
+			// The desktop window answers this itself: its chooser is parented to the window and
+			// opens without the host's scripting path. Any other deployment asks the host's
+			// composed directory picker.
+			const desktop = (globalThis as { __DSH_DIRECTORY_PICKER__?: DesktopDirectoryPicker })
+				.__DSH_DIRECTORY_PICKER__;
+			if (typeof desktop?.pick === "function") return desktop.pick();
+			return ctx.uiWorkspace.pickDirectory();
 		},
 		paneLimit() {
 			overlay.toast({ text: t("toast.paneLimit"), tone: "info" });
@@ -237,6 +257,17 @@ export function apply(ctx: ClientContext): void {
 		return () => root.classList.remove("rf-quiet");
 	}, "dsh-split: quiet mode");
 	ctx.effect(() => trackHostDrags(document, drag), "dsh-split: drag sources");
+	// The sidebar's New session button plans the conversation on a home surface while a split is
+	// open: a new conversation there must choose its project instead of inheriting the main one.
+	ctx.effect(
+		() =>
+			trackHostNewSession(document, () => {
+				if (controller.getSnapshot() === null) return false;
+				controller.newBeside(undefined);
+				return true;
+			}),
+		"dsh-split: host new session",
+	);
 	ctx.effect(() => trackKeyboardNavigation(document), "dsh-split: keyboard navigation");
 
 	// Host notifications are handled outside the notifying call: a synchronous `sessions.list`
@@ -304,6 +335,7 @@ export function apply(ctx: ClientContext): void {
 							drag,
 							sessions: ctx.sessions,
 							loadPresets,
+							pickFolder: () => host.pickFolder(),
 							defaultPreset: () => defaultPreset,
 							workspaceOf: (sessionId: string | undefined) =>
 								sessionId === undefined

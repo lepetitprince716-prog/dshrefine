@@ -198,3 +198,24 @@ export function measureCenterColumn(doc: Document): Rect | null {
 	if (box.width < 120 || box.height < 120) return null;
 	return { left: box.left, top: box.top, width: box.width, height: box.height };
 }
+
+/**
+ * Take over the sidebar's New session button while a split is open, so it plans the conversation
+ * on a home surface instead of creating one in the main view's project. `onNewSession` returns
+ * false when no split is open: the shipped click then runs untouched.
+ */
+export function trackHostNewSession(doc: Document, onNewSession: () => boolean): () => void {
+	const onClick = (event: MouseEvent): void => {
+		// A modified or non-primary click keeps its shipped meaning (open elsewhere, context menu).
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
+			return;
+		const button = elementOf(event.target)?.closest(NEW_SESSION_BUTTON);
+		if (button === null) return;
+		if (!onNewSession()) return;
+		// Capture phase, before the host's delegated handler: the Session is never created.
+		event.preventDefault();
+		event.stopImmediatePropagation();
+	};
+	doc.addEventListener("click", onClick, true);
+	return () => doc.removeEventListener("click", onClick, true);
+}

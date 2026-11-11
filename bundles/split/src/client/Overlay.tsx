@@ -63,6 +63,8 @@ export interface OverlayInjected {
 	/** Agent modes for the home surface, read from the host roster on demand. */
 	readonly loadPresets: () => Promise<readonly PanePreset[]>;
 	readonly defaultPreset: () => string | undefined;
+	/** The host's folder chooser; `null` when the user cancels. */
+	readonly pickFolder: () => Promise<string | null>;
 	/** The Workspace a new conversation beside this pane inherits, when it has one. */
 	readonly workspaceOf: (sessionId: string | undefined) => string | undefined;
 }
@@ -319,7 +321,9 @@ function SplitSurface(props: SurfaceProps): ReactNode {
 							onClose={() => controller.closePane(id)}
 							onToggleSidebar={props.toggleSidebar}
 							actions={
-								sessionId === undefined ? undefined : props.renderSlot("dsh-split.pane.actions", { sessionId })
+								sessionId === undefined
+									? undefined
+									: props.renderSlot("dsh-split.pane.actions", { sessionId })
 							}
 							t={t}
 						/>
@@ -346,9 +350,13 @@ function SplitSurface(props: SurfaceProps): ReactNode {
 									useWorkspaces={props.useWorkspaces}
 									shown={unpickable}
 									loadPresets={props.loadPresets}
+									pickFolder={props.pickFolder}
 									defaultPreset={props.defaultPreset}
+									// Default to the project of the Session this pane split from; the
+									// home surface preselects it but still lets the user change it.
 									defaultWorkspaceId={props.workspaceOf(
-										panes(layout.root).find((pane) => pane.sessionId !== undefined)?.sessionId,
+										controller.nearOf(id) ??
+											panes(layout.root).find((pane) => pane.sessionId !== undefined)?.sessionId,
 									)}
 									t={t}
 								/>
@@ -395,6 +403,7 @@ function PanePickerOrHome(props: {
 	readonly useWorkspaces: RootSlotProps["useWorkspaces"];
 	readonly shown: ReadonlySet<string>;
 	readonly loadPresets: () => Promise<readonly PanePreset[]>;
+	readonly pickFolder: () => Promise<string | null>;
 	readonly defaultPreset: () => string | undefined;
 	readonly defaultWorkspaceId: string | undefined;
 	readonly t: Translate;
@@ -424,7 +433,9 @@ function PanePickerOrHome(props: {
 				useSessions={props.useSessions}
 				shown={props.shown}
 				onPick={(picked) => props.controller.assign(props.paneId, picked)}
-				onCreate={() => props.controller.createIn(props.paneId)}
+				// A new conversation is always planned on the home surface: it is where the
+				// project and the mode are chosen.
+				onNew={() => setMode("home")}
 				t={props.t}
 			/>
 		);
@@ -437,12 +448,12 @@ function PanePickerOrHome(props: {
 			presets={presets}
 			defaultPreset={props.defaultPreset()}
 			onStart={(input) => props.controller.startIn(props.paneId, input)}
+			onPickFolder={props.pickFolder}
 			onOpenExisting={() => setMode("picker")}
 			t={props.t}
 		/>
 	);
 }
-
 
 /**
  * One pane's Session body plus the running flag it needs for the sleep timer. The status
