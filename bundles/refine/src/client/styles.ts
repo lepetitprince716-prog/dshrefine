@@ -2,7 +2,7 @@
 export const PKG = "@refine/refine";
 
 export const REFINE_CSS = `
-.rfx-ctl{display:inline-flex;align-items:center;gap:2px;}
+.rfx-ctl{position:relative;display:inline-flex;align-items:center;gap:2px;}
 .rfx-mask{position:fixed;inset:0;z-index:var(--refine-z-overlay,1000);display:flex;align-items:flex-start;justify-content:center;padding:10vh 16px 16px;background:var(--refine-mask);animation:rfx-in 160ms var(--refine-ease-out);}
 .rfx-dialog{display:flex;flex-direction:column;width:min(620px,100%);max-height:72vh;overflow:hidden;background:var(--refine-bg-2);border:var(--refine-hairline) solid var(--refine-border-2);border-radius:var(--refine-radius-panel);box-shadow:var(--refine-elevation-panel);animation:rfx-rise 200ms var(--refine-ease-out);}
 .rfx-head{display:flex;align-items:flex-start;gap:12px;padding:16px 16px 10px;}

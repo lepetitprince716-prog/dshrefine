@@ -5,10 +5,10 @@
 // - Rewind: fork a Session at the event just before any user message. The Host already forks an
 //   exact event prefix; this entry resolves "before message N" into that prefix and cancels a live
 //   turn first, so the choice works while the agent is still answering.
-// - Background: a `bash` call keeps running after the browser asks for it. The tool registry's
-//   `tools/execute` waterfall is raced against a per-call release; the release returns a synthetic
-//   result that points the agent at `job_list`, while the command continues as the job the bash
-//   tool registered when it started.
+// - Background: a `bash` call keeps running after the browser asks for it. Each Agent's resolved
+//   `bash` definition is wrapped one scope deeper and its wait is raced against a per-call release;
+//   releasing returns a synthetic result that points the agent at `job_list`, while the command
+//   continues as the job the bash tool registered when it started.
 //
 // Everything is declared locally: the bundle imports no @deepseek-ai package at runtime, so it
 // loads in any profile that composes a web server and a session controller.
@@ -49,17 +49,18 @@ interface SessionControllerLike {
 	}>;
 }
 
-interface ToolExecutionLike {
+interface ToolDefinitionLike {
 	readonly name: string;
-	readonly callId: string;
-	readonly arguments?: unknown;
-	readonly agent?: { readonly id: string };
+	execute(args: unknown, exec: unknown): Promise<unknown>;
+	readonly [key: string]: unknown;
 }
 
-interface ToolResultLike {
-	readonly isError: boolean;
-	readonly content: readonly unknown[];
-	readonly [key: string]: unknown;
+interface AgentLike {
+	readonly id: string;
+	readonly ctx: {
+		readonly tools: { register(definition: ToolDefinitionLike): unknown };
+	};
+	readonly session?: { readonly header?: { readonly cwd?: string } };
 }
 
 interface HostContext {
@@ -71,32 +72,15 @@ interface HostContext {
 		}): () => void;
 	};
 	readonly sessionController: SessionControllerLike;
+	readonly tools: {
+		get(name: string, scope?: AgentLike): ToolDefinitionLike | undefined;
+	};
 	on(
 		event: "agent/created",
 		listener: (payload: { readonly agent: AgentLike }) => void,
 	): () => void;
-	on(
-		event: "tools/execute",
-		listener: (
-			exec: ToolExecutionLike,
-			next: () => Promise<ToolResultLike>,
-		) => Promise<ToolResultLike>,
-	): () => void;
 	effect(execute: () => (() => void) | void, label?: string): void;
 	readonly logger?: { warn(...args: unknown[]): void };
-}
-
-interface AgentLike {
-	readonly id: string;
-	readonly ctx: {
-		on(
-			event: "tools/execute",
-			listener: (
-				exec: ToolExecutionLike,
-				next: () => Promise<ToolResultLike>,
-			) => Promise<ToolResultLike>,
-		): () => void;
-	};
 }
 
 interface Config {
@@ -181,54 +165,65 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 		};
 	};
 
-	const gate = async (exec: ToolExecutionLike, next: () => Promise<ToolResultLike>) => {
-				{
-				const sessionId = exec.agent?.id;
-				if (exec.name !== "bash" || sessionId === undefined) return next();
-				// A command the model already put in the background needs no gate.
-				const args = exec.arguments as { readonly run_in_background?: unknown } | undefined;
-				if (args?.run_in_background === true) return next();
-
+	/**
+	 * Wrap the agent's own `bash` definition so a browser request can release a call early.
+	 *
+	 * The definition is resolved through the registry per agent, then re-registered one layer
+	 * deeper (agent scope), which the registry resolves before the global row. Everything but
+	 * `execute` is carried over unchanged, so schema, presentation, budgets and sandbox behaviour
+	 * stay exactly those of the shipped tool; only the wait is raced.
+	 */
+	const installGate = (agent: AgentLike): void => {
+		const base = ctx.tools.get("bash", agent);
+		if (base === undefined) return;
+		const wrapped: ToolDefinitionLike = {
+			...base,
+			execute: async (args: unknown, exec: unknown) => {
 				let fire: (() => void) | undefined;
 				const gate = new Promise<void>((resolve) => {
 					fire = resolve;
 				});
-				const untrack = track(sessionId, () => fire?.());
-				const running = next();
-				// The tool keeps running; its late settlement belongs to the job registry, not to
-				// the result this browser-facing race returns.
+				const untrack = track(agent.id, () => fire?.());
+				const running = base.execute(args, exec);
+				// The command keeps running; its settlement belongs to the job registry.
 				running.catch(() => undefined);
 				try {
 					const winner = await Promise.race([
-						running.then((result) => ({ detached: false as const, result })),
+						running.then((value) => ({ detached: false as const, value })),
 						gate.then(() => ({ detached: true as const })),
 					]);
-					if (!winner.detached) return winner.result;
-					return {
-						isError: false,
-						value: { detached: true },
-						content: [
-							{
-								type: "text",
-								text: "[moved to the background]\nThe command is still running as a background job. Use job_list to find it and job_output to read its output; do not start it again.",
-							},
-						],
-					};
+					if (!winner.detached) return winner.value;
+					return detachedValue(agent);
 				} finally {
 					untrack();
 				}
-				}
+			},
+		};
+		try {
+			agent.ctx.tools.register(wrapped);
+		} catch (cause) {
+			ctx.logger?.warn("[refine] bash gate not installed", cause);
+		}
 	};
 
-	// Registered on the plugin's own context, like the shipped timeout policy: the registry
-	// dispatches the waterfall through the composition, not through the Agent's fiber.
-	// PREVIEW. The wrapper is wired, but on 0.2.1-rc.1 this row's context does not receive the
-	// registry's dispatch waterfall, so no call is ever gated: the browser control stays hidden
-	// unless `refine.detach` is set, and the reliable path today is the executor's own
-	// promote-on-timeout budget (`extras/fast-background.patch.yml`).
-	ctx.on("tools/execute", gate);
+	/** A foreground-shaped result that tells the model where the command went. */
+	const detachedValue = (agent: AgentLike): unknown => ({
+		kind: "foreground",
+		cwd: agent.session?.header?.cwd ?? ".",
+		exitCode: null,
+		signal: null,
+		timedOut: false,
+		aborted: false,
+		timeoutMs: 0,
+		stdout: {
+			text: "[moved to the background]\nThe command is still running as a background job. Use job_list to find it and job_output to read its output; do not start it again.",
+			truncated: false,
+		},
+		stderr: { text: "", truncated: false },
+	});
+
 	ctx.on("agent/created", (payload) => {
-		payload.agent.ctx.on("tools/execute", gate);
+		installGate(payload.agent);
 	});
 
 	ctx.effect(

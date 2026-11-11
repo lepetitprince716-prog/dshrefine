@@ -54,9 +54,12 @@ job runtime when it outlives its timeout. [`extras/fast-background.patch.yml`](e
 lowers that budget so long builds and servers stop blocking the conversation today.
 
 The bundle also carries a "move the running command to the background" control and its host
-route, but on 0.2.1-rc.1 a profile bundle's context does not receive the tool registry's dispatch
-waterfall, so the gate never arms. The control stays hidden unless `localStorage["refine.detach"]`
-is `"1"`, and the feature is marked preview until that hook is available.
+route. Two host hooks were tried on 0.2.1-rc.1 and neither intercepts a model-direct call: the
+`tools/execute` waterfall never reaches a profile bundle's context, and an agent-scope wrapper
+registered through `agent.ctx.tools.register` resolves in the registry view but is not the
+definition the call executes. The control therefore stays hidden unless
+`localStorage["refine.detach"]` is `"1"`, and the feature is marked preview until the host exposes
+that hook.
 
 ## Install
 
