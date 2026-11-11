@@ -203,7 +203,6 @@ function SplitSurface(props: SurfaceProps): ReactNode {
 		[rect, props.anchor],
 	);
 	const descriptors = panes(layout.root);
-	const statuses = props.useSessionStatus((map) => map);
 	const sessionOf = new Map(descriptors.map((pane) => [pane.id, pane.sessionId]));
 	const shown = new Set(descriptors.flatMap((pane) => pane.sessionId ?? []));
 	// The picker leaves out what the sidebar hides as well: archived Sessions.
@@ -320,23 +319,18 @@ function SplitSurface(props: SurfaceProps): ReactNode {
 							onClose={() => controller.closePane(id)}
 							onToggleSidebar={props.toggleSidebar}
 							actions={
-								sessionId === undefined
-									? undefined
-									: props.renderSlot("dsh-split.pane.actions", {
-											sessionId,
-											running: statuses.get(sessionId)?.running === true,
-										})
+								sessionId === undefined ? undefined : props.renderSlot("dsh-split.pane.actions", { sessionId })
 							}
 							t={t}
 						/>
 						<div className="dsp-pane-main" data-pane-main="">
 							{sessionId !== undefined ? (
-								<PaneSession
+								<PaneSessionSlot
 									key={sessionId}
 									paneId={id}
 									sessionId={sessionId}
 									active={active}
-									running={statuses.get(sessionId)?.running === true}
+									useSessionStatus={props.useSessionStatus}
 									sessions={props.sessions}
 									SessionProvider={props.SessionProvider}
 									renderSlot={props.renderSlot}
@@ -444,6 +438,37 @@ function PanePickerOrHome(props: {
 			defaultPreset={props.defaultPreset()}
 			onStart={(input) => props.controller.startIn(props.paneId, input)}
 			onOpenExisting={() => setMode("picker")}
+			t={props.t}
+		/>
+	);
+}
+
+
+/**
+ * One pane's Session body plus the running flag it needs for the sleep timer. The status
+ * subscription lives here, per pane, and selects a boolean: a Session status change anywhere
+ * re-renders only the pane whose boolean changed, never the whole split surface.
+ */
+function PaneSessionSlot(props: {
+	readonly paneId: PaneId;
+	readonly sessionId: string;
+	readonly active: boolean;
+	readonly useSessionStatus: RootSlotProps["useSessionStatus"];
+	readonly sessions: ClientSessions;
+	readonly SessionProvider: RootSlotProps["SessionProvider"];
+	readonly renderSlot: RootSlotProps["renderSlot"];
+	readonly t: Translate;
+}): ReactNode {
+	const running = props.useSessionStatus((map) => map.get(props.sessionId)?.running === true);
+	return (
+		<PaneSession
+			paneId={props.paneId}
+			sessionId={props.sessionId}
+			active={props.active}
+			running={running}
+			sessions={props.sessions}
+			SessionProvider={props.SessionProvider}
+			renderSlot={props.renderSlot}
 			t={props.t}
 		/>
 	);
