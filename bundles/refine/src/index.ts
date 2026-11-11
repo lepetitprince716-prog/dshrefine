@@ -1,20 +1,19 @@
 // Host half of @refine/refine.
 //
-// Two capabilities the shipped composition does not expose to a browser:
+// Two jobs:
 //
 // - Rewind: fork a Session at the event just before any user message. The Host already forks an
 //   exact event prefix; this entry resolves "before message N" into that prefix and cancels a live
 //   turn first, so the choice works while the agent is still answering.
-// - Background: a `bash` call keeps running after the browser asks for it. Each Agent's resolved
-//   `bash` definition is wrapped one scope deeper and its wait is raced against a per-call release;
-//   releasing returns a synthetic result that points the agent at `job_list`, while the command
-//   continues as the job the bash tool registered when it started.
+// - Long commands: a prompt section that asks the agent to start anything slow as a background job
+//   (`run_in_background`) instead of holding the turn. The capability is the shipped bash tool's;
+//   the section is what makes it the default behaviour rather than an afterthought.
 //
 // Everything is declared locally: the bundle imports no @deepseek-ai package at runtime, so it
 // loads in any profile that composes a web server and a session controller.
 
 /** Services this entry needs before it activates. */
-export const inject = ["webServer", "sessionController", "tools"];
+export const inject = ["webServer", "sessionController"];
 
 interface HostRequest {
 	readonly method?: string;
@@ -49,20 +48,6 @@ interface SessionControllerLike {
 	}>;
 }
 
-interface ToolDefinitionLike {
-	readonly name: string;
-	execute(args: unknown, exec: unknown): Promise<unknown>;
-	readonly [key: string]: unknown;
-}
-
-interface AgentLike {
-	readonly id: string;
-	readonly ctx: {
-		readonly tools: { register(definition: ToolDefinitionLike): unknown };
-	};
-	readonly session?: { readonly header?: { readonly cwd?: string } };
-}
-
 interface HostContext {
 	readonly webServer: {
 		register(route: {
@@ -72,22 +57,22 @@ interface HostContext {
 		}): () => void;
 	};
 	readonly sessionController: SessionControllerLike;
-	readonly tools: {
-		get(name: string, scope?: AgentLike): ToolDefinitionLike | undefined;
-	};
-	on(
-		event: "agent/created",
-		listener: (payload: { readonly agent: AgentLike }) => void,
-	): () => void;
-	on(
-		event: "agent/pre-step",
-		listener: (
-			payload: { readonly agent: AgentLike },
-			next: () => Promise<unknown>,
-		) => Promise<unknown>,
-	): () => void;
+	inject(services: readonly string[], apply: (ctx: never) => void): void;
 	effect(execute: () => (() => void) | void, label?: string): void;
 	readonly logger?: { warn(...args: unknown[]): void };
+}
+
+/** The slice of the prompt service this entry uses. */
+interface PromptHost {
+	readonly systemPrompt: {
+		section(section: {
+			readonly name: string;
+			readonly order: number;
+			readonly text: string;
+		}): () => void;
+	};
+	readonly jobs: unknown;
+	effect(execute: () => (() => void) | void, label?: string): void;
 }
 
 interface Config {
@@ -98,6 +83,20 @@ interface Config {
 const PREFIX = "/api/refine";
 /** Header the browser must send; a cross-site form post cannot set it without a preflight. */
 const HEADER = "x-refine";
+
+/**
+ * Guidance that turns the shipped background capability into the default for slow work. Short
+ * commands stay foreground: their output is the answer, and a job round-trip only adds latency.
+ */
+const LONG_COMMAND_SECTION = `# Long-running commands
+
+Start a command in the background when it is likely to run longer than ~10 seconds, or when it
+serves instead of returning: installs, builds, full test suites, downloads, dev servers, watchers.
+Call \`bash\` with \`run_in_background: true\` and keep working — read progress with \`job_output\`,
+list with \`job_list\`, stop with \`job_kill\`. A foreground \`bash\` call holds the whole turn until
+the command exits, so reserve it for quick checks and for anything whose exit code decides the
+next step. When you do wait, pass a \`timeoutMs\` that matches how long the answer is worth
+waiting for; the harness moves a command that outlives it to the background instead of blocking.`;
 
 function send(res: HostResponse, status: number, body: unknown): void {
 	res.statusCode = status;
@@ -136,7 +135,7 @@ function messageText(blocks: readonly { readonly type?: string; readonly text?: 
  * before the message would keep the turn's opening record, which the Host then closes with a
  * synthetic closer and the new conversation starts with a dangling "completed" marker.
  */
-function traceAtSeqs(events: readonly SessionEventLike[]): Map<number, number | undefined> {
+function cutsFor(events: readonly SessionEventLike[]): Map<number, number | undefined> {
 	const cut = new Map<number, number | undefined>();
 	let turnStart: number | undefined;
 	for (const event of events) {
@@ -155,93 +154,18 @@ function authorized(req: HostRequest): boolean {
 export function apply(ctx: HostContext, config: Config = {}): void {
 	const settleMs = config.settleTimeoutMs ?? 2_000;
 
-	/** Live `bash` calls per Session, each with the release the browser route fires. */
-	const live = new Map<string, Set<() => void>>();
-
-	const track = (sessionId: string, release: () => void): (() => void) => {
-		let set = live.get(sessionId);
-		if (set === undefined) {
-			set = new Set();
-			live.set(sessionId, set);
-		}
-		set.add(release);
-		const owner = set;
-		return () => {
-			owner.delete(release);
-			if (owner.size === 0 && live.get(sessionId) === owner) live.delete(sessionId);
-		};
-	};
-
-	/**
-	 * Wrap the agent's own `bash` definition so a browser request can release a call early.
-	 *
-	 * The definition is resolved through the registry per agent, then re-registered one layer
-	 * deeper (agent scope), which the registry resolves before the global row. Everything but
-	 * `execute` is carried over unchanged, so schema, presentation, budgets and sandbox behaviour
-	 * stay exactly those of the shipped tool; only the wait is raced.
-	 */
-	const installed = new WeakSet<object>();
-	const installGate = (agent: AgentLike): void => {
-		if (installed.has(agent)) return;
-		const base = ctx.tools.get("bash", agent);
-		if (base === undefined) return;
-		const wrapped: ToolDefinitionLike = {
-			...base,
-			execute: async (args: unknown, exec: unknown) => {
-				let fire: (() => void) | undefined;
-				const gate = new Promise<void>((resolve) => {
-					fire = resolve;
-				});
-				const untrack = track(agent.id, () => fire?.());
-				const running = base.execute(args, exec);
-				// The command keeps running; its settlement belongs to the job registry.
-				running.catch(() => undefined);
-				try {
-					const winner = await Promise.race([
-						running.then((value) => ({ detached: false as const, value })),
-						gate.then(() => ({ detached: true as const })),
-					]);
-					if (!winner.detached) return winner.value;
-					return detachedValue(agent);
-				} finally {
-					untrack();
-				}
-			},
-		};
-		try {
-			agent.ctx.tools.register(wrapped);
-			installed.add(agent);
-		} catch {
-			// A preset that registers its own agent-scope `bash` owns the layer; the gate is retried
-			// before the next step, after that preset has finished composing.
-		}
-	};
-
-	/** A foreground-shaped result that tells the model where the command went. */
-	const detachedValue = (agent: AgentLike): unknown => ({
-		kind: "foreground",
-		cwd: agent.session?.header?.cwd ?? ".",
-		exitCode: null,
-		signal: null,
-		timedOut: false,
-		aborted: false,
-		timeoutMs: 0,
-		stdout: {
-			text: "[moved to the background]\nThe command is still running as a background job. Use job_list to find it and job_output to read its output; do not start it again.",
-			truncated: false,
-		},
-		stderr: { text: "", truncated: false },
-	});
-
-	ctx.on("agent/created", (payload) => {
-		installGate(payload.agent);
-	});
-
-	// A preset may register its own tools after `agent/created`; installing again before each
-	// step lands the gate above whatever the preset composed for the Agent.
-	ctx.on("agent/pre-step", async (payload, next) => {
-		installGate(payload.agent);
-		return next();
+	// Only a composition with a job runtime can background anything; without one the guidance
+	// would describe tools that are not there.
+	ctx.inject(["systemPrompt", "jobs"], (prompt: PromptHost) => {
+		prompt.effect(
+			() =>
+				prompt.systemPrompt.section({
+					name: "refine-long-commands",
+					order: 1005,
+					text: LONG_COMMAND_SECTION,
+				}),
+			"refine: long-command guidance",
+		);
 	});
 
 	ctx.effect(
@@ -258,7 +182,7 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 						return send(res, 400, { error: "sessionId is required" });
 					try {
 						const inspection = await ctx.sessionController.inspect(sessionId);
-						const cuts = traceAtSeqs(inspection.events);
+						const cuts = cutsFor(inspection.events);
 						const messages = inspection.events
 							.filter(
 								(event) =>
@@ -325,33 +249,5 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 				},
 			}),
 		"refine: rewind route",
-	);
-
-	ctx.effect(
-		() =>
-			ctx.webServer.register({
-				kind: "exact",
-				path: `${PREFIX}/detach`,
-				handler: async (req, res) => {
-					if (!authorized(req) || req.method !== "POST")
-						return send(res, 403, { error: "forbidden" });
-					let body: Record<string, unknown>;
-					try {
-						body = await readJson(req);
-					} catch {
-						return send(res, 400, { error: "invalid JSON" });
-					}
-					const sessionId = body.sessionId;
-					if (typeof sessionId !== "string" || sessionId === "")
-						return send(res, 400, { error: "sessionId is required" });
-					const calls = live.get(sessionId);
-					if (calls === undefined || calls.size === 0)
-						return send(res, 200, { detached: 0 });
-					const releases = [...calls];
-					for (const release of releases) release();
-					return send(res, 200, { detached: releases.length });
-				},
-			}),
-		"refine: detach route",
 	);
 }

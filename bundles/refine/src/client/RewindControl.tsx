@@ -5,7 +5,7 @@ import { createOverlayStore, IconButton, OverlayProvider, Spinner, Tooltip } fro
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { SessionId, SessionSlotProps } from "../dsh-types.d.ts";
-import { detach, readTimeline, rewind, type TimelineEntry } from "./api.ts";
+import { readTimeline, rewind, type TimelineEntry } from "./api.ts";
 import type { Translate } from "./locale.ts";
 
 interface ControlProps {
@@ -33,38 +33,6 @@ function RewindGlyph(): ReactNode {
 			/>
 		</svg>
 	);
-}
-
-function BackgroundGlyph(): ReactNode {
-	return (
-		<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-			<path
-				d="M8 2.5v6.6m0 0 2.4-2.4M8 9.1 5.6 6.7"
-				stroke="currentColor"
-				strokeWidth="1.4"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-			/>
-			<path
-				d="M3 10.2v1.9c0 .8.6 1.4 1.4 1.4h7.2c.8 0 1.4-.6 1.4-1.4v-1.9"
-				stroke="currentColor"
-				strokeWidth="1.4"
-				strokeLinecap="round"
-			/>
-		</svg>
-	);
-}
-
-/**
- * Background detach is a preview on 0.2.1: the control appears only when `refine.detach=1` is set,
- * until the Host dispatch hook is available to a profile bundle.
- */
-function detachEnabled(): boolean {
-	try {
-		return globalThis.localStorage.getItem("refine.detach") === "1";
-	} catch {
-		return false;
-	}
 }
 
 /** Wall-clock time of a message; the day prefix appears only for older messages. */
@@ -103,36 +71,6 @@ export function RewindControl(props: ControlProps): ReactNode {
 	const store = useMemo(() => createOverlayStore(), []);
 	const running = props.running;
 	const [open, setOpen] = useState(false);
-	const [busy, setBusy] = useState(false);
-	const [notice, setNotice] = useState<string | null>(null);
-	const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-	useEffect(() => () => {
-		if (noticeTimer.current !== undefined) clearTimeout(noticeTimer.current);
-	}, []);
-
-	const flash = useCallback((text: string) => {
-		setNotice(text);
-		if (noticeTimer.current !== undefined) clearTimeout(noticeTimer.current);
-		noticeTimer.current = setTimeout(() => setNotice(null), 2600);
-	}, []);
-
-	const moveToBackground = (): void => {
-		setBusy(true);
-		detach(props.sessionId).then(
-			(result) => {
-				flash(result.detached > 0 ? props.t("background.done") : props.t("background.none"));
-			},
-			(cause: unknown) => {
-				flash(
-					props.t("background.failed", {
-						message: String((cause as Error)?.message ?? cause),
-					}),
-				);
-			},
-		).finally(() => setBusy(false));
-	};
-
 	return (
 		<OverlayProvider store={store}>
 		<span className="rf-root rfx-ctl">
@@ -144,22 +82,6 @@ export function RewindControl(props: ControlProps): ReactNode {
 					onClick={() => setOpen(true)}
 				/>
 			</Tooltip>
-			{running && detachEnabled() ? (
-				<Tooltip label={props.t("header.background")} placement="bottom-end">
-					<IconButton
-						size="sm"
-						label={props.t("header.background")}
-						icon={busy ? <Spinner size="sm" /> : <BackgroundGlyph />}
-						disabled={busy}
-						onClick={moveToBackground}
-					/>
-				</Tooltip>
-			) : null}
-			{notice === null ? null : (
-				<span className="rfx-ctl-note" role="status">
-					{notice}
-				</span>
-			)}
 			{open
 				? createPortal(
 						<RewindDialog

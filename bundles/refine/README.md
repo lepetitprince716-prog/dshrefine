@@ -15,18 +15,16 @@ Rewind for DeepSeek Harness conversations, plus a preview of background detach.
   id. The client opens it; the original conversation is untouched.
 - Both routes require the `x-refine: 1` header.
 
-## Background (preview)
+## Long commands
 
-`POST /api/refine/detach {sessionId}` releases the registered `bash` calls of that Session. The
-host half wraps each Agent's resolved `bash` definition one scope deeper and races the wait
-against that release; releasing returns a foreground-shaped `[moved to the background]` value and
-the command keeps running as its job.
+On load the host half registers one prompt section (`refine-long-commands`, order 1005) that asks
+the agent to start anything slow with `bash`'s `run_in_background` and to keep working against
+`job_output` / `job_list` / `job_kill` instead of holding the turn. It is registered only when the
+composition has both `systemPrompt` and `jobs`, so a deployment without a job runtime never sees
+guidance for tools that are absent.
 
-On 0.2.1-rc.1 the hook does not bite: a profile bundle's `tools/execute` listener is never
-invoked, and the agent-scope wrapper resolves through `ctx.tools.get("bash", agent)` yet is not the
-definition a model-direct call executes. The control in the header is hidden unless
-`localStorage["refine.detach"] = "1"`. The reliable path today is the executor's own
-promote-on-timeout budget — see `extras/fast-background.patch.yml` at the repository root.
+There is no wrapper: the shipped bash tool already registers every command as a job and returns
+the id at once for background calls. The section changes when the agent chooses that path.
 
 ## Install
 

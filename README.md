@@ -47,19 +47,25 @@ popularised. Nothing is copied from a closed product.
 - Works while the agent is still answering: the turn is cancelled first, then the fork is created.
 - The rewind control is localised (English / 简体中文).
 
-### Background (preview)
+### Long commands
 
-DeepSeek Harness already runs every command as a job and hands a foreground command over to its
-job runtime when it outlives its timeout. [`extras/fast-background.patch.yml`](extras/fast-background.patch.yml)
-lowers that budget so long builds and servers stop blocking the conversation today.
+A conversation should not sit and watch a build. The bundle adds one prompt section: anything
+expected to run longer than ~10 seconds — installs, builds, test suites, downloads, servers — is
+started with `bash`'s `run_in_background: true`, and the agent keeps working while the command
+runs as a job. Progress comes from `job_output`, the roster from `job_list`, and `job_kill` stops
+it. The turn ends as soon as the command is admitted instead of when it exits.
 
-The bundle also carries a "move the running command to the background" control and its host
-route. Two host hooks were tried on 0.2.1-rc.1 and neither intercepts a model-direct call: the
-`tools/execute` waterfall never reaches a profile bundle's context, and an agent-scope wrapper
-registered through `agent.ctx.tools.register` resolves in the registry view but is not the
-definition the call executes. The control therefore stays hidden unless
-`localStorage["refine.detach"]` is `"1"`, and the feature is marked preview until the host exposes
-that hook.
+The capability is the shipped bash tool's; the section is what makes it the default behaviour.
+Nothing is wrapped, patched, or re-implemented.
+
+[`extras/fast-background.patch.yml`](extras/fast-background.patch.yml) is a second line of defence
+for deployments that want a hard budget: it lowers the executor's foreground wait so the tool
+moves a command to the background on its own. The section above is the part this repository ships
+by default.
+
+A manual "move the running command to the background" control is not possible on 0.2.1: a profile
+bundle cannot intercept a model-direct tool call (neither the `tools/execute` waterfall nor an
+agent-scope tool wrapper reaches it). The bundle does not ship a button that cannot work.
 
 ## Install
 

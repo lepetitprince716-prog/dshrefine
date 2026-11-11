@@ -43,10 +43,3 @@ export function rewind(sessionId: string, atSeq: number): Promise<{ sessionId: s
 	});
 }
 
-export function detach(sessionId: string): Promise<{ detached: number }> {
-	return call("/api/refine/detach", {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ sessionId }),
-	});
-}
