@@ -1,7 +1,7 @@
 // The layout phase of an embedded conversation, derived the way the host's main conversation
 // derives it (`ConversationMainPanel` and `conversationPhase` in dsh-client-ui-conversation
-// 0.2.1-rc.1). A blank Session needs `hero`, which centres its composer; under `active` the
-// composer of an empty conversation sits at the top of the pane.
+// 0.2.1-rc.1). A blank Session is in `hero`: the surface that asks for project and mode and
+// centres its composer; an existing conversation stays `active` with the composer at the foot.
 
 /** The Session snapshot fields the phase reads. */
 export interface PhaseSession {

@@ -167,8 +167,11 @@ function FixedChat(props: { readonly renderSlot: RootSlotProps["renderSlot"] }):
 }
 
 /**
- * The pane slot's entry (session scope): the host's own conversation, embedded. `hero` stays
- * false: the hero row's Workspace picker would retarget the host's main selection.
+ * The pane slot's entry (session scope): the host's own conversation, embedded. A blank Session
+ * renders the shipped new-session surface (`hero`), so the pane asks for project and mode with the
+ * host's own Workspace and agent-mode chips above the host's own composer, exactly like the main
+ * new-session page. The chips act through the host's main selection; the controller follows that
+ * selection into the focused pane, which is the pane the user clicked to reach the chip.
  */
 export function PaneBody({
 	sessionId,
@@ -180,11 +183,15 @@ export function PaneBody({
 	const session = useSession((snapshot) => snapshot);
 	const conversation = useConversation((snapshot) => snapshot);
 	const summaryBlank = useSessions((state) => state.byId[sessionId]?.blank);
+	const phase = panePhase(session, conversation, summaryBlank);
 	return (
 		<div className="dsp-pane-content" data-split-pane-body="">
 			{renderFactorySlot(
 				"conversation.content",
-				{ variant: "embedded", phase: panePhase(session, conversation, summaryBlank), hero: false },
+				// `hero` is what puts the shipped new-session surface in the pane: the Workspace
+				// chip, the agent-mode chip and the composer. It is only correct while the Session
+				// is blank; an existing conversation keeps the plain composer.
+				{ variant: "embedded", phase, hero: phase === "hero" },
 				{ slots: { views: FixedChat } },
 			)}
 		</div>

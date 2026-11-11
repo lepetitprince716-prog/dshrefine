@@ -13,16 +13,10 @@ import type {
 import { STORAGE_KEY } from "../layout/storage.ts";
 import { createAnchorStore, SplitAnchor } from "./anchor.ts";
 import { createSplitController, type HostPorts } from "./controller.ts";
-import {
-	createDragStore,
-	measureCenterColumn,
-	trackHostDrags,
-	trackHostNewSession,
-} from "./drag.ts";
+import { createDragStore, measureCenterColumn, trackHostDrags } from "./drag.ts";
 import { requestPaneFocus, trackKeyboardNavigation } from "./focus.ts";
 import { NS, registerLocale, type Translate } from "./locale.ts";
 import { SplitOverlay } from "./Overlay.tsx";
-import type { PanePreset } from "./PaneHome.tsx";
 import { PANE_SLOT, PaneBody } from "./PaneSession.tsx";
 import { SessionMenuItem } from "./SessionMenuItem.tsx";
 import { SplitButton } from "./SplitButton.tsx";
@@ -36,11 +30,6 @@ const MENU_ITEM_ORDER = 500;
 const HEADER_BUTTON_ID = "dsh-split.split";
 /** Last of the header utilities, next to the right sidebar's corner button. */
 const HEADER_BUTTON_ORDER = 900;
-
-/** The desktop window's own folder chooser, parented to the window (preload bridge). */
-interface DesktopDirectoryPicker {
-	pick(): Promise<string | null>;
-}
 
 /** Required services; `shortcuts` is optional and reached through `ctx.inject`. */
 export const inject = ["slots", "locale", "sessions", "uiWorkspace", "sidebarRight"];
@@ -80,83 +69,24 @@ export function apply(ctx: ClientContext): void {
 	let cancelFocus: (() => void) | undefined;
 	let paneSeq = 0;
 
-	// The mode roster comes from the bundle's own Host route: a profile without the preset
-	// registry answers an empty list and the surface starts with the deployment default.
-	let defaultPreset: string | undefined;
-	const loadPresets = async (): Promise<readonly PanePreset[]> => {
-		try {
-			const response = await fetch("/api/split/presets", {
-				headers: { "x-split": "1" },
-				credentials: "same-origin",
-			});
-			if (!response.ok) return [];
-			const body = (await response.json()) as {
-				presets?: readonly {
-					id: string;
-					name?: string;
-					description?: string;
-					isDefault?: boolean;
-				}[];
-			};
-			const presets = body.presets ?? [];
-			defaultPreset = presets.find((preset) => preset.isDefault === true)?.id;
-			return presets.map((preset) => {
-				const known = `mode.${preset.id}`;
-				const localized = (t as unknown as (key: string) => string)(known);
-				return {
-					id: preset.id,
-					name: preset.name ?? (localized === known ? preset.id : localized),
-					...(preset.description === undefined ? {} : { description: preset.description }),
-				};
-			});
-		} catch {
-			return [];
-		}
-	};
-
 	const host: HostPorts = {
 		openSession: (sessionId) => ctx.uiWorkspace.openSession(sessionId),
 		mainSession: () => ctx.sidebarRight.mounted.getSnapshot(),
-		async createSession(near, options) {
-			// A chosen folder is registered as a Workspace first, so the conversation joins the
-			// same project list the sidebar shows.
-			let workspaceId = options?.workspaceId;
-			if (workspaceId === undefined && options?.path !== undefined && workspaces !== undefined) {
-				workspaceId = (await workspaces.create({ path: options.path })).workspaceId;
-			}
-			// Without an explicit choice the conversation joins the Workspace of the one it is
-			// opened beside; without a Workspace it starts in the same directory.
-			workspaceId ??=
+		async createSession(near) {
+			// The conversation joins the Workspace of the one it is opened beside; without a
+			// Workspace it starts in the same directory.
+			const workspaceId =
 				near === undefined
 					? undefined
 					: workspaces?.list.getSnapshot().items.find((item) => item.sessionIds.includes(near))
 							?.workspaceId;
-			const agentPreset = options?.agentPreset;
-			if (workspaceId !== undefined)
-				return ctx.sessions.create({
-					workspaceId,
-					...(agentPreset === undefined ? {} : { agentPreset }),
-				});
-			const cwd =
-				options?.path ??
-				(near === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[near]?.cwd);
-			return ctx.sessions.create({
-				...(cwd === undefined ? {} : { cwd }),
-				...(agentPreset === undefined ? {} : { agentPreset }),
-			});
+			if (workspaceId !== undefined) return ctx.sessions.create({ workspaceId });
+			const cwd = near === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[near]?.cwd;
+			return ctx.sessions.create({ ...(cwd === undefined ? {} : { cwd }) });
 		},
 		createFailed(error) {
 			console.error("[dsh-split] creating a conversation failed", error);
 			overlay.toast({ text: t("toast.createFailed"), tone: "error" });
-		},
-		async pickFolder() {
-			// The desktop window answers this itself: its chooser is parented to the window and
-			// opens without the host's scripting path. Any other deployment asks the host's
-			// composed directory picker.
-			const desktop = (globalThis as { __DSH_DIRECTORY_PICKER__?: DesktopDirectoryPicker })
-				.__DSH_DIRECTORY_PICKER__;
-			if (typeof desktop?.pick === "function") return desktop.pick();
-			return ctx.uiWorkspace.pickDirectory();
 		},
 		paneLimit() {
 			overlay.toast({ text: t("toast.paneLimit"), tone: "info" });
@@ -257,17 +187,6 @@ export function apply(ctx: ClientContext): void {
 		return () => root.classList.remove("rf-quiet");
 	}, "dsh-split: quiet mode");
 	ctx.effect(() => trackHostDrags(document, drag), "dsh-split: drag sources");
-	// The sidebar's New session button plans the conversation on a home surface while a split is
-	// open: a new conversation there must choose its project instead of inheriting the main one.
-	ctx.effect(
-		() =>
-			trackHostNewSession(document, () => {
-				if (controller.getSnapshot() === null) return false;
-				controller.newBeside(undefined);
-				return true;
-			}),
-		"dsh-split: host new session",
-	);
 	ctx.effect(() => trackKeyboardNavigation(document), "dsh-split: keyboard navigation");
 
 	// Host notifications are handled outside the notifying call: a synchronous `sessions.list`
@@ -334,15 +253,6 @@ export function apply(ctx: ClientContext): void {
 							overlay,
 							drag,
 							sessions: ctx.sessions,
-							loadPresets,
-							pickFolder: () => host.pickFolder(),
-							defaultPreset: () => defaultPreset,
-							workspaceOf: (sessionId: string | undefined) =>
-								sessionId === undefined
-									? undefined
-									: workspaces?.list
-											.getSnapshot()
-											.items.find((item) => item.sessionIds.includes(sessionId))?.workspaceId,
 							toggleSidebar: () => ctx.sidebarRight.toggleExpanded(),
 						}),
 					},

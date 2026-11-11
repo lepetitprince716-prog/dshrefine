@@ -2,8 +2,8 @@
 // flat: every pane is keyed by its id and absolutely positioned from the tree, and dividers sit
 // on their own layer, so splitting, closing or resizing never remounts another pane. Each pane is
 // a flat column of the app; while a split drag is in progress every visible pane (or, without a
-// split, the main conversation) carries a drop surface. An empty pane shows its home surface, so a
-// new conversation chooses its own project and mode instead of inheriting the main view's.
+// split, the main conversation) carries a drop surface. A blank pane renders the host's own
+// new-session surface, and a pane with no Session shows the session picker.
 import { OverlayLayer, OverlayProvider, type OverlayStore } from "@refine/ui";
 import {
 	type CSSProperties,
@@ -40,7 +40,6 @@ import { type DragState, type DragStore, measureCenterColumn, startOwnDrag } fro
 import { paneFocusAction } from "./focus.ts";
 import type { Translate } from "./locale.ts";
 import { CreatingNote, PaneHeader } from "./PaneFrame.tsx";
-import { PaneHome, type PanePreset } from "./PaneHome.tsx";
 import { PaneSession } from "./PaneSession.tsx";
 import { Picker } from "./Picker.tsx";
 import { Switcher } from "./Switcher.tsx";
@@ -60,13 +59,6 @@ export interface OverlayInjected {
 	readonly overlay: OverlayStore;
 	readonly drag: DragStore;
 	readonly toggleSidebar: () => void;
-	/** Agent modes for the home surface, read from the host roster on demand. */
-	readonly loadPresets: () => Promise<readonly PanePreset[]>;
-	readonly defaultPreset: () => string | undefined;
-	/** The host's folder chooser; `null` when the user cancels. */
-	readonly pickFolder: () => Promise<string | null>;
-	/** The Workspace a new conversation beside this pane inherits, when it has one. */
-	readonly workspaceOf: (sessionId: string | undefined) => string | undefined;
 }
 
 type OverlayProps = OverlayInjected & RootSlotProps;
@@ -343,21 +335,14 @@ function SplitSurface(props: SurfaceProps): ReactNode {
 							) : creating ? (
 								<CreatingNote t={t} />
 							) : (
-								<PanePickerOrHome
-									paneId={id}
-									controller={controller}
+								<Picker
 									useSessions={props.useSessions}
-									useWorkspaces={props.useWorkspaces}
 									shown={unpickable}
-									loadPresets={props.loadPresets}
-									pickFolder={props.pickFolder}
-									defaultPreset={props.defaultPreset}
-									// Default to the project of the Session this pane split from; the
-									// home surface preselects it but still lets the user change it.
-									defaultWorkspaceId={props.workspaceOf(
-										controller.nearOf(id) ??
-											panes(layout.root).find((pane) => pane.sessionId !== undefined)?.sessionId,
-									)}
+									onPick={(picked) => controller.assign(id, picked)}
+									// A new conversation starts as a blank Session in the project of the
+									// pane it is opened beside; the pane then shows the shipped
+									// new-session surface, where the project and mode can change.
+									onCreate={() => controller.createIn(id)}
 									t={t}
 								/>
 							)}
@@ -388,70 +373,6 @@ function SplitSurface(props: SurfaceProps): ReactNode {
 						/>
 					))}
 		</div>
-	);
-}
-
-/**
- * What an empty pane shows: the home surface that starts a conversation in a chosen project and
- * mode, with the host's session picker one click away. Mounted only while the pane has no
- * Session, so the preset roster is read when the surface is actually opened.
- */
-function PanePickerOrHome(props: {
-	readonly paneId: PaneId;
-	readonly controller: SplitController;
-	readonly useSessions: RootSlotProps["useSessions"];
-	readonly useWorkspaces: RootSlotProps["useWorkspaces"];
-	readonly shown: ReadonlySet<string>;
-	readonly loadPresets: () => Promise<readonly PanePreset[]>;
-	readonly pickFolder: () => Promise<string | null>;
-	readonly defaultPreset: () => string | undefined;
-	readonly defaultWorkspaceId: string | undefined;
-	readonly t: Translate;
-}): ReactNode {
-	const [mode, setMode] = useState<"home" | "picker">("home");
-	const [presets, setPresets] = useState<readonly PanePreset[]>([]);
-	const workspaces = props.useWorkspaces((snapshot) => snapshot);
-
-	useEffect(() => {
-		let alive = true;
-		props.loadPresets().then(
-			(list) => {
-				if (alive) setPresets(list);
-			},
-			() => {
-				// Without the roster the home surface still starts a conversation with the default mode.
-			},
-		);
-		return () => {
-			alive = false;
-		};
-	}, [props.loadPresets]);
-
-	if (mode === "picker") {
-		return (
-			<Picker
-				useSessions={props.useSessions}
-				shown={props.shown}
-				onPick={(picked) => props.controller.assign(props.paneId, picked)}
-				// A new conversation is always planned on the home surface: it is where the
-				// project and the mode are chosen.
-				onNew={() => setMode("home")}
-				t={props.t}
-			/>
-		);
-	}
-	return (
-		<PaneHome
-			workspaces={workspaces.items}
-			workspacesReady={workspaces.phase === "ready"}
-			defaultWorkspaceId={props.defaultWorkspaceId}
-			presets={presets}
-			defaultPreset={props.defaultPreset()}
-			onStart={(input) => props.controller.startIn(props.paneId, input)}
-			onPickFolder={props.pickFolder}
-			onOpenExisting={() => setMode("picker")}
-			t={props.t}
-		/>
 	);
 }
 

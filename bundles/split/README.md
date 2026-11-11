@@ -1,7 +1,7 @@
 # @refine/split
 
-Split-screen sessions for DeepSeek Harness. Client-only; the host half serves one read-only route
-for the agent-mode roster.
+Split-screen sessions for DeepSeek Harness. Client-only: the host row is an empty entry that keeps
+the bundle composable, and every surface is the host's own.
 
 ## How it works
 
@@ -10,23 +10,19 @@ for the agent-mode roster.
   and in stable DOM order, so splitting, closing a sibling or dragging a divider never remounts a
   pane.
 - Each pane retains its Session in an effect (source `dshSplit`), wraps it in `SessionProvider`
-  and renders the `conversation.content` factory with `variant: "embedded"` and `hero: false`
-  through the session-scoped child slot `dsh-split.pane`.
-- An empty pane renders its **home surface**: the Workspace list, a typed folder path, a folder
-  chooser, the agent-mode chips from `/api/split/presets`, and a link to the session picker.
-  Starting there creates the Session with the chosen Workspace (or registers the chosen folder
-  as one) and `agentPreset`.
-- Every new-conversation action opens that surface instead of creating a Session: the pane `+`
-  header button, the split buttons and a new-conversation drop add a home pane, a new
-  conversation dropped on a pane's centre empties that pane, and while a split is open the
-  sidebar's **New session** button (host-owned, intercepted before its delegated click) also
-  adds a home pane. Outside a split that button keeps its shipped behaviour, and a modified
-  click on it always passes through.
-- The home surface preselects the project of the Session its pane split from, and still lets the
-  user pick another project, type a path, or choose a folder.
-- The folder chooser is the desktop window's `__DSH_DIRECTORY_PICKER__` bridge (native, parented
-  to the window) when present; otherwise it asks `uiWorkspace.pickDirectory()`. A cancelled
-  chooser changes nothing.
+  and renders the `conversation.content` factory with `variant: "embedded"` through the
+  session-scoped child slot `dsh-split.pane`.
+- A blank Session renders with `hero: true`, so a new pane shows the **host's own new-session
+  surface inside the pane**: the Workspace chip (with the host's workspace menu and its Add
+  workspace / folder chooser), the agent-mode chip, and the host's composer. Sending the first
+  message starts the conversation exactly as in the main view. The pane `+` button, the split
+  buttons and a new-conversation drop all start a blank Session in the project of the pane they
+  split from; the chips change it from there.
+- The workspace and mode chips act through the host's main selection; the controller follows that
+  selection into the focused pane, which is the pane the user clicked to reach the chip.
+- An empty pane (a Session missing from the list, or a split opened from a sidebar drag) shows the
+  session picker: pick an existing conversation or start a new one in the same directory, which
+  then shows the new-session surface above.
 - The layout is a binary tree (at most 8 panes, ratios 0.1-0.9). Panes tile with no gap; a
   hairline divider is the only separation. Closing the focused pane returns focus to the previous
   one; closing the second-to-last pane leaves split mode.
@@ -45,12 +41,6 @@ for the agent-mode roster.
 - `html[data-rf-background]` pauses decorative animations while the window is hidden.
 - `localStorage["dsh-split.quiet"] = "1"` adds `html.rf-quiet`, which pauses them in the foreground
   as well.
-
-## Host route
-
-`GET /api/split/presets` returns `{presets:[{id,name,description,isDefault,broken}]}` from
-`agentPresets.remoteExportList()`. It requires the `x-split: 1` header. When the profile composes
-no agent-preset registry the route is not registered and the home surface shows no mode row.
 
 ## Install
 

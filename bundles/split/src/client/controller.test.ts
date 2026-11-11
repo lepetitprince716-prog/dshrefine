@@ -31,7 +31,6 @@ function fakeHost(main = "s1"): FakeHost {
 		mainSession: () => host.main,
 		createSession: async () => "created",
 		createFailed: () => host.events.push("createFailed"),
-		pickFolder: async () => null,
 		paneLimit: () => host.events.push("paneLimit"),
 		surfaceSize: () => host.surface,
 		enterSplit: () => host.events.push("enter"),
@@ -105,6 +104,32 @@ describe("opening a split", () => {
 		expect(host.events).toEqual(["enter"]);
 		expect(host.opened).toEqual(["s2"]);
 		expect(host.focused).toEqual(["p1"]);
+	});
+
+	it("starts a conversation beside the main Session when the split opens", async () => {
+		const host = fakeHost("s1");
+		const pending = holdCreates(host);
+		const controller = createSplitController(host);
+		controller.splitActive("row");
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", undefined]);
+		expect(controller.getView().creating.has("p1")).toBe(true);
+		pending.resolve("s9");
+		await settled();
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", "s9"]);
+		expect(pending.nears).toEqual(["s1"]);
+	});
+
+	it("starts a conversation beside the pane it splits from", async () => {
+		const host = fakeHost("s1");
+		const pending = holdCreates(host);
+		const controller = createSplitController(host);
+		controller.openInSplit("s2");
+		controller.splitActive("row");
+		expect(controller.getView().creating.has("p2")).toBe(true);
+		pending.resolve("s9");
+		await settled();
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", "s2", "s9"]);
+		expect(pending.nears).toEqual(["s2"]);
 	});
 
 	it("opens the main Session beside an empty picker pane", () => {
@@ -259,6 +284,21 @@ describe("picker panes", () => {
 		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", undefined]);
 		expect(controller.getSnapshot()?.focus).toBe("p0");
 	});
+
+	it("creates a Session beside the focused pane's Session", async () => {
+		const host = fakeHost("s1");
+		const nears: (string | undefined)[] = [];
+		host.createSession = async (near) => {
+			nears.push(near);
+			return "created";
+		};
+		const controller = createSplitController(host);
+		// An explicit Session beside the main one leaves the second pane on its picker.
+		controller.openInSplit("s1");
+		await controller.createIn("p1");
+		expect(nears).toEqual(["s1"]);
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", "created"]);
+	});
 });
 
 describe("Session list and storage", () => {
@@ -365,7 +405,7 @@ describe("dropping onto a pane", () => {
 		expect(controller.planDrop(target, { kind: "pane", paneId: "gone" }, "left")).toBeNull();
 	});
 
-	it("adds an empty pane for a new conversation dropped on an edge", async () => {
+	it("opens a new conversation in a new pane once the Session exists", async () => {
 		const host = fakeHost("s1");
 		const pending = holdCreates(host);
 		const controller = createSplitController(host);
@@ -373,33 +413,36 @@ describe("dropping onto a pane", () => {
 		controller.drop({ kind: "pane", paneId: "p0" }, { kind: "new" }, "right");
 		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", undefined, "s2"]);
 		expect(controller.getSnapshot()?.focus).toBe("p2");
-		expect(controller.getView().creating.size).toBe(0);
-		// The home surface creates the conversation only when it is answered.
+		expect(controller.getView().creating.has("p2")).toBe(true);
+		expect(pending.nears).toEqual(["s1"]);
+
+		pending.resolve("s9");
 		await settled();
-		expect(pending.nears).toEqual([]);
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", "s9", "s2"]);
+		expect(controller.getView().creating.size).toBe(0);
+		expect(host.main).toBe("s9");
 	});
 
-	it("empties a pane whose Session was replaced by a new conversation on its centre", async () => {
+	it("replaces a pane's Session with a new conversation dropped on its centre", async () => {
 		const host = fakeHost("s1");
 		const pending = holdCreates(host);
 		const controller = createSplitController(host);
 		controller.openInSplit("s2");
 		controller.drop({ kind: "pane", paneId: "p0" }, { kind: "new" }, "center");
-		expect(sessionsOf(controller.getSnapshot())).toEqual([undefined, "s2"]);
-		expect(controller.getSnapshot()?.focus).toBe("p0");
+		expect(pending.nears).toEqual(["s1"]);
+		pending.resolve("s9");
 		await settled();
-		expect(pending.nears).toEqual([]);
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s9", "s2"]);
+		expect(controller.getSnapshot()?.focus).toBe("p0");
 	});
 
-	it("drops a started Session whose pane was closed or filled meanwhile", async () => {
+	it("drops a created Session whose pane was closed or filled meanwhile", async () => {
 		const host = fakeHost("s1");
 		const pending = holdCreates(host);
 		const controller = createSplitController(host);
 		controller.openInSplit("s2");
-		controller.splitActive("row");
-		controller.splitActive("row");
-		controller.startIn("p2", { path: "/work/new" });
-		controller.startIn("p3", { path: "/work/other" });
+		controller.drop({ kind: "pane", paneId: "p0" }, { kind: "new" }, "right");
+		controller.drop({ kind: "pane", paneId: "p1" }, { kind: "new" }, "right");
 		controller.closePane("p2");
 		controller.assign("p3", "s5");
 		pending.resolve("s8");
@@ -410,13 +453,12 @@ describe("dropping onto a pane", () => {
 		expect(host.opened).not.toContain("s9");
 	});
 
-	it("reports a failed creation and leaves the home surface in place", async () => {
+	it("reports a failed creation and leaves the picker in place", async () => {
 		const host = fakeHost("s1");
 		const pending = holdCreates(host);
 		const controller = createSplitController(host);
 		controller.openInSplit("s2");
-		controller.splitActive("row");
-		controller.startIn("p2", { path: "/work/new" });
+		controller.drop({ kind: "pane", paneId: "p1" }, { kind: "new" }, "right");
 		pending.reject(new Error("offline"));
 		await settled();
 		expect(host.events).toContain("createFailed");
@@ -433,15 +475,6 @@ describe("dropping onto a pane", () => {
 		controller.drop(target, { kind: "empty" }, "top");
 		expect(sessionsOf(controller.getSnapshot())).toEqual([undefined, "s1", "s2"]);
 		expect(controller.getSnapshot()?.focus).toBe("p2");
-	});
-
-	it("empties the target pane for a new conversation dropped on its centre", () => {
-		const host = fakeHost("s1");
-		const controller = createSplitController(host);
-		controller.openInSplit("s2");
-		controller.drop({ kind: "pane", paneId: "p1" }, { kind: "new" }, "center");
-		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", undefined]);
-		expect(controller.getSnapshot()?.focus).toBe("p1");
 	});
 
 	it("turns edge drops into replacements once eight panes are open", () => {
@@ -499,16 +532,18 @@ describe("dropping onto the main conversation", () => {
 		expect(controller.planDrop(main, { kind: "empty" }, "center")).toBeNull();
 	});
 
-	it("opens a new pane beside the main one and leaves the project choice to it", async () => {
+	it("opens a new conversation beside the main one", async () => {
 		const host = fakeHost("s1");
 		const pending = holdCreates(host);
 		const controller = createSplitController(host);
 		controller.drop({ kind: "main" }, { kind: "new" }, "right");
 		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", undefined]);
-		expect(controller.getView().creating.size).toBe(0);
+		expect(controller.getView().creating.has("p1")).toBe(true);
+		pending.resolve("s9");
 		await settled();
-		expect(pending.nears).toEqual([]);
-		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", undefined]);
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", "s9"]);
+		expect(pending.nears).toEqual(["s1"]);
+		expect(host.main).toBe("s9");
 	});
 
 	it("opens a new conversation dropped on the centre as the main Session", async () => {
@@ -536,15 +571,14 @@ describe("dropping onto the main conversation", () => {
 });
 
 describe("new conversations beside a pane", () => {
-	it("opens the split with a home pane beside the main conversation without one", async () => {
+	it("opens one beside the main conversation without a split", async () => {
 		const host = fakeHost("s1");
 		const pending = holdCreates(host);
 		const controller = createSplitController(host);
 		controller.newBeside(undefined);
-		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", undefined]);
-		expect(controller.getSnapshot()?.focus).toBe("p1");
+		pending.resolve("s9");
 		await settled();
-		expect(pending.nears).toEqual([]);
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", "s9"]);
 	});
 
 	it("puts it right while the panes fit, else below", () => {
@@ -562,7 +596,7 @@ describe("new conversations beside a pane", () => {
 		expect(parentAxis("p4")).toBe("column");
 	});
 
-	it("opens one beside the given pane on the given side, on its home surface", async () => {
+	it("opens one beside the given pane on the given side", async () => {
 		const host = fakeHost("s1");
 		const pending = holdCreates(host);
 		const controller = createSplitController(host);
@@ -571,27 +605,10 @@ describe("new conversations beside a pane", () => {
 		expect(controller.getSnapshot()?.root).toMatchObject({
 			first: { kind: "split", axis: "column" },
 		});
-		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", undefined, "s2"]);
-		expect(controller.getSnapshot()?.focus).toBe("p2");
-		// Nothing is created until the home surface is answered.
+		expect(pending.nears).toEqual(["s1"]);
+		pending.resolve("s9");
 		await settled();
-		expect(pending.nears).toEqual([]);
-		expect(controller.getView().creating.size).toBe(0);
-	});
-
-	it("remembers the Session a home pane split from as its default project", () => {
-		const host = fakeHost("s1");
-		const controller = createSplitController(host);
-		controller.openInSplit("s2");
-		// A pane opened beside the second pane defaults to that pane's project...
-		controller.newBeside("p1", "right");
-		expect(controller.nearOf("p2")).toBe("s2");
-		// ...and forgets it once a conversation fills the pane.
-		controller.assign("p2", "s9");
-		expect(controller.nearOf("p2")).toBeUndefined();
-		// A conversation dropped on a pane's centre seeds the replacement from that Session.
-		controller.drop({ kind: "pane", paneId: "p1" }, { kind: "new" }, "center");
-		expect(controller.nearOf("p1")).toBe("s2");
+		expect(sessionsOf(controller.getSnapshot())).toEqual(["s1", "s9", "s2"]);
 	});
 });
 

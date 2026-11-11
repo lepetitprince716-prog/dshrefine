@@ -23,15 +23,12 @@ popularised. Nothing is copied from a closed product.
 
 - Up to 8 panes in a binary tree, drag a session row or a pane header to place it, dividers with
   keyboard support, one-pane-at-a-time fallback on narrow surfaces.
-- **Every new conversation in a pane starts on a home surface**: the project list, a folder path
-  for a new project, a folder chooser (the desktop window's own native dialog, else the
-  deployment's directory picker), and the agent modes the deployment composes (standard, minimal,
-  creator, PTC — whatever the roster reports). Start there and the conversation is created in
-  that project with that mode. The pane `+` button, a new-conversation drop, the split buttons
-  and, while a split is open, the sidebar's New session button all land here, so nothing is
-  silently created in the main view's project any more.
-- Jump to an existing conversation from the same surface; its "new" action returns to the home
-  surface rather than creating a Session in an inherited directory.
+- **A new pane opens the shipped new-session surface inside the pane**: the product mark, the
+  Workspace chip (its menu lists projects and can add one through the folder chooser), the
+  agent-mode chip, and the host's composer. Sending the first message starts the conversation
+  there; the new pane defaults to the project of the pane it split from.
+- A pane with no Session shows the session picker: open an existing conversation or start a new
+  one in the same directory, which then shows the new-session surface.
 - **Flat panes**: no card, no shadow, no accent ring. Panes tile edge to edge and a hairline
   divider separates them; the active pane is marked by its header, not by a frame around the
   conversation.
@@ -109,7 +106,7 @@ for `localStorage` state) and `--patch <file>` (extra profile patch, for example
 
 ```
 packages/ui            @refine/ui — the component kit (buttons, overlays, diff view, tokens)
-bundles/split          @refine/split — pane tree, drag/drop, home surface, flat styles
+bundles/split          @refine/split — pane tree, drag/drop, embedded new-session surface, flat styles
 bundles/refine         @refine/refine — rewind (host route + dialog), long-command guidance for background jobs
 extras/               optional profile patches
 scripts/               dev instance helper
@@ -119,9 +116,10 @@ scripts/               dev instance helper
 
 - Rewinding creates a **new conversation** (the host's fork API); the original is kept. There is no
   in-place truncation of a session log.
-- The home surface reads the mode roster through a small host route (`/api/split/presets`). A
-  profile without the agent-preset registry still works: the mode row is simply not shown.
-- The three plugin routes are guarded by a custom header (no cross-site form can set it), but the
+- A blank pane shows the host's own new-session surface, so the Workspace and agent-mode chips
+  follow whatever the deployment composes; a profile without an agent-preset registry shows no
+  mode chip, exactly like the main new-session page.
+- The two plugin routes are guarded by a custom header (no cross-site form can set it), but the
   harness web server has no per-route authentication; they exist on the loopback interface only.
 - Split panes keep the host conversation without its header; each pane gets its own header with
   the session breadcrumb, status dot, and the rewind control.

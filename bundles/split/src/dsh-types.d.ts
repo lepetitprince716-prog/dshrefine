@@ -84,8 +84,6 @@ export interface ClientWorkspaces {
 
 export interface ClientUiWorkspace {
 	openSession(target: SessionId): void;
-	/** Host-side folder chooser; resolves `null` when the user cancels. */
-	pickDirectory(): Promise<string | null>;
 }
 
 export interface ClientSidebarRight {

@@ -40,28 +40,15 @@ import {
 } from "../layout/tree.ts";
 import type { DragPayload } from "./drag.ts";
 
-/** Choice a pane's home surface hands to the host when it starts a conversation. */
-export interface NewSessionOptions {
-	readonly workspaceId?: string;
-	/** Directory to register as a Workspace when no Workspace id is chosen. */
-	readonly path?: string;
-	readonly agentPreset?: string;
-}
-
 export interface HostPorts {
 	/** Make a Session the host's main Session. */
 	openSession(sessionId: SessionId): void;
 	/** The host's main Session, if any. */
 	mainSession(): SessionId | undefined;
-	/**
-	 * Create a Session for a new conversation. Without explicit options it joins `near`'s
-	 * Workspace, else its directory; a home surface passes the chosen Workspace, mode or path.
-	 */
-	createSession(near: SessionId | undefined, options?: NewSessionOptions): Promise<SessionId>;
+	/** Create a blank Session for a new conversation: `near`'s Workspace, else its directory. */
+	createSession(near: SessionId | undefined): Promise<SessionId>;
 	/** Tell the user a new conversation could not be created. */
 	createFailed(error: unknown): void;
-	/** Open the host's folder chooser for a new conversation's project; `null` when cancelled. */
-	pickFolder(): Promise<string | null>;
 	/** Tell the user the layout already holds the most panes it may. */
 	paneLimit(): void;
 	/** Size of the surface the panes share (the main conversation's box), when on screen. */
@@ -133,12 +120,10 @@ export interface SplitController {
 	subscribe(listener: () => void): () => void;
 	/** Open a Session beside the active one, or focus its pane when it is already shown. */
 	openInSplit(sessionId: SessionId | undefined, axis?: SplitAxis): void;
-	/** Add a pane beside the active pane; the new pane shows its home surface. */
+	/** Add a pane beside the active pane and start a conversation in it. */
 	splitActive(axis: SplitAxis): void;
 	/**
-	 * Start a new conversation beside a pane (the focused one by default), or beside the main one.
-	 * The pane opens on its home surface, so the conversation's project and mode are chosen there;
-	 * without a split the main conversation is replaced by a new Session as before.
+	 * Open a new conversation beside a pane (the focused one by default), or beside the main one.
 	 * Without a side, the new pane goes right while the panes still fit, else below.
 	 */
 	newBeside(id: PaneId | undefined, side?: Side): void;
@@ -151,10 +136,7 @@ export interface SplitController {
 	/** Keyboard pane switching: activate and move focus. */
 	focusStep(delta: number): void;
 	assign(id: PaneId, sessionId: SessionId): void;
-	/** The Session a pane's home surface defaults its project to, until the pane is filled. */
-	nearOf(id: PaneId): SessionId | undefined;
-	/** Start the conversation a pane's home surface chose, beside that pane's Session. */
-	startIn(id: PaneId, options: NewSessionOptions): Promise<void>;
+	createIn(id: PaneId): Promise<void>;
 	setRatio(path: readonly number[], ratio: number): void;
 	/** Give every pane of the divider's run the same share. */
 	balance(path: readonly number[]): void;
@@ -189,11 +171,6 @@ export function createSplitController(host: HostPorts): SplitController {
 	/** The Session this controller last asked the host to open, until the host reports it. */
 	let opened: SessionId | undefined;
 	let cancelPersist: (() => void) | undefined;
-	/**
-	 * For every pane showing its home surface, the Session it was opened beside. Home preselects
-	 * that Session's project, so a new conversation starts where the pane split from by default.
-	 */
-	const homeNear = new Map<PaneId, SessionId | undefined>();
 	const listeners = new Set<() => void>();
 
 	const notify = (): void => {
@@ -217,10 +194,7 @@ export function createSplitController(host: HostPorts): SplitController {
 		if (view.zoomed && (next === null || grew)) view = { ...view, zoomed: false };
 		state = next;
 		if (entering) host.enterSplit();
-		if (leaving) {
-			homeNear.clear();
-			host.leaveSplit();
-		}
+		if (leaving) host.leaveSplit();
 		persist();
 		notify();
 	};
@@ -274,7 +248,6 @@ export function createSplitController(host: HostPorts): SplitController {
 
 	const assign = (id: PaneId, sessionId: SessionId): void => {
 		if (state === null || findPane(state.root, id) === undefined) return;
-		homeNear.delete(id);
 		const shown = paneOfSession(state.root, sessionId);
 		if (shown !== undefined && shown !== id) {
 			activate(shown);
@@ -282,17 +255,6 @@ export function createSplitController(host: HostPorts): SplitController {
 			return;
 		}
 		settle(assignSession(state.root, id, sessionId), id);
-	};
-
-	/**
-	 * Empty a pane, so it shows its home surface again. The Session it showed stays in the
-	 * sidebar; nothing is retained or closed here.
-	 */
-	const clearPane = (id: PaneId): void => {
-		if (state === null || findPane(state.root, id) === undefined) return;
-		const replaced = nearPane(id);
-		homeNear.set(id, replaced);
-		settle(assignSession(state.root, id, undefined), id);
 	};
 
 	/** The Session a new conversation for a pane is created beside: the pane's own, else main. */
@@ -303,14 +265,10 @@ export function createSplitController(host: HostPorts): SplitController {
 	 * Create a Session for a pane. The result lands only if the pane still shows what it showed
 	 * when the request started: a pane closed or given another Session meanwhile is left alone.
 	 */
-	const createInto = (
-		id: PaneId,
-		near: SessionId | undefined,
-		options?: NewSessionOptions,
-	): void => {
+	const createInto = (id: PaneId, near: SessionId | undefined): void => {
 		const before = state === null ? undefined : findPane(state.root, id)?.sessionId;
 		markCreating(id, true);
-		host.createSession(near, options).then(
+		host.createSession(near).then(
 			(sessionId) => {
 				markCreating(id, false);
 				const pane = state === null ? undefined : findPane(state.root, id);
@@ -345,7 +303,6 @@ export function createSplitController(host: HostPorts): SplitController {
 		const first = leaf(host.newPaneId(), main);
 		const added = leaf(host.newPaneId(), sessionId);
 		const axis = sideAxis(side);
-		if (sessionId === undefined) homeNear.set(added.id, main);
 		set({
 			root: sideLeads(side) ? split(axis, added, first) : split(axis, first, added),
 			focus: added.id,
@@ -416,17 +373,13 @@ export function createSplitController(host: HostPorts): SplitController {
 				assign(plan.target, plan.sessionId);
 				return;
 			case "create":
-				// A new conversation in this pane, not yet titled or located: the home surface
-				// asks where it lives and how it runs before anything is created.
-				clearPane(plan.target);
-				host.focusPaneElement(plan.target);
+				createInto(plan.target, nearPane(plan.target));
 				return;
 			case "insert": {
-				// A new pane always opens on its home surface; a dropped Session fills it as given.
-				const content = sessionOf(plan.content);
-				const added = leaf(host.newPaneId(), content);
-				if (place(plan.target, plan.side, added) && content === undefined)
-					homeNear.set(added.id, nearPane(plan.target));
+				const added = leaf(host.newPaneId(), sessionOf(plan.content));
+				const near = nearPane(plan.target);
+				if (place(plan.target, plan.side, added) && plan.content.kind === "new")
+					createInto(added.id, near);
 				return;
 			}
 			case "open":
@@ -438,22 +391,30 @@ export function createSplitController(host: HostPorts): SplitController {
 					(error: unknown) => host.createFailed(error),
 				);
 				return;
-			case "splitMain":
-				openAround(host.mainSession(), plan.side, sessionOf(plan.content));
+			case "splitMain": {
+				const main = host.mainSession();
+				const added = openAround(main, plan.side, sessionOf(plan.content));
+				if (plan.content.kind === "new") createInto(added, main);
 				return;
+			}
 			case "full":
 				host.paneLimit();
 				return;
 		}
 	};
 
-	/** Open the split around the main Session with a second pane; the picker when none is given. */
+	/**
+	 * Open the split around the main Session with a second pane. A named Session fills that pane;
+	 * without one the pane starts a conversation in the same project and shows the host's
+	 * new-session surface.
+	 */
 	const open = (sessionId: SessionId | undefined, axis: SplitAxis): void => {
 		const main = host.mainSession();
 		// Without a main Session (another main panel is active) only an explicit Session opens.
 		if (main === undefined && sessionId === undefined) return;
 		const second = main === undefined || sessionId === main ? undefined : sessionId;
-		openAround(main ?? sessionId, axis === "row" ? "right" : "bottom", second);
+		const added = openAround(main ?? sessionId, axis === "row" ? "right" : "bottom", second);
+		if (sessionId === undefined && main !== undefined) createInto(added, main);
 	};
 
 	return {
@@ -486,7 +447,9 @@ export function createSplitController(host: HostPorts): SplitController {
 			const target = state.focus;
 			const added = leaf(host.newPaneId());
 			const near = nearPane(target);
-			if (place(target, axis === "row" ? "right" : "bottom", added)) homeNear.set(added.id, near);
+			// The new pane starts a conversation in the same project as the one it splits from;
+			// its shipped new-session surface then changes project or mode before the first turn.
+			if (place(target, axis === "row" ? "right" : "bottom", added)) createInto(added.id, near);
 		},
 
 		newBeside(id, side) {
@@ -501,16 +464,13 @@ export function createSplitController(host: HostPorts): SplitController {
 			const target = id ?? state.focus;
 			const chosen =
 				side ?? (surface === undefined ? "right" : bestSide(state.root, target, surface));
-			// No Session is created here: the pane opens its home surface, so the conversation's
-			// project and mode are the ones chosen there and never the main view's selection.
 			const added = leaf(host.newPaneId());
 			const near = nearPane(target);
-			if (place(target, chosen, added)) homeNear.set(added.id, near);
+			if (place(target, chosen, added)) createInto(added.id, near);
 		},
 
 		closePane(id) {
 			if (state === null) return;
-			homeNear.delete(id);
 			if (paneCount(state.root) <= 2) {
 				const other = panes(state.root).find((pane) => pane.id !== id);
 				set(null);
@@ -549,11 +509,17 @@ export function createSplitController(host: HostPorts): SplitController {
 
 		assign,
 
-		nearOf: (id) => homeNear.get(id),
-
-		startIn(id, options) {
-			createInto(id, nearPane(id), options);
-			return Promise.resolve();
+		async createIn(id) {
+			if (state === null) return;
+			const focused = findPane(state.root, state.focus)?.sessionId;
+			const near =
+				findPane(state.root, id)?.sessionId ??
+				focused ??
+				panes(state.root).find((pane) => pane.sessionId !== undefined)?.sessionId;
+			const sessionId = await host.createSession(near);
+			// The picker may have been answered by a drop while the Session was being created.
+			if (state !== null && findPane(state.root, id)?.sessionId === undefined)
+				assign(id, sessionId);
 		},
 
 		setRatio(path, ratio) {

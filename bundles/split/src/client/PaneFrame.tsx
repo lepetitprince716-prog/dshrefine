@@ -71,7 +71,7 @@ export function usePaneInfo(
 	);
 	if (sessionId === undefined)
 		return {
-			title: t("home.title"),
+			title: t("picker.title"),
 			workspace: undefined,
 			status: undefined,
 		};

@@ -116,41 +116,14 @@ export const SPLIT_CSS = `
 .dsp-menu-icon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;flex:none;}
 
 /* ---------- an empty pane's home: project and mode, then start ---------- */
-.dsp-home{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:var(--refine-s4);box-sizing:border-box;width:100%;max-width:520px;margin:0 auto;padding:var(--refine-s6) var(--refine-s5) var(--refine-s4);overflow-y:auto;animation:dsp-fade-in 260ms var(--dsp-ease-enter) backwards;}
-.dsp-home-head{display:flex;flex-direction:column;gap:var(--refine-s1);}
-.dsp-home-title{font:var(--refine-font-title);color:var(--refine-text);}
-.dsp-home-hint{font:var(--refine-font-secondary);color:var(--refine-text-tertiary);}
-.dsp-home-section{display:flex;flex-direction:column;gap:var(--refine-s2);min-width:0;}
-.dsp-home-label{font:var(--refine-font-caption-strong);letter-spacing:.02em;text-transform:uppercase;color:var(--refine-text-tertiary);}
-.dsp-home-projects{display:flex;flex-direction:column;max-height:220px;overflow-y:auto;border:var(--refine-hairline) solid var(--refine-border-2);border-radius:var(--refine-radius-md);}
-.dsp-home-project{display:flex;align-items:center;gap:var(--refine-s2);width:100%;min-height:34px;box-sizing:border-box;padding:0 var(--refine-s2);border:0;border-bottom:var(--refine-hairline) solid var(--refine-border-1);background:none;color:var(--refine-text);font:var(--refine-font-body);text-align:left;cursor:pointer;}
-.dsp-home-project:last-child{border-bottom:0;}
-.dsp-home-project:hover{background:var(--refine-hover);}
-.dsp-home-project[aria-checked="true"]{background:var(--refine-active);}
-.dsp-home-project:focus-visible{outline:var(--refine-focus-ring);outline-offset:-1px;}
-.dsp-home-project-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--refine-font-body-strong);}
-.dsp-home-project-path{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--refine-text-tertiary);font:var(--refine-font-caption);font-family:var(--refine-font-code);text-align:right;}
-.dsp-home-empty{margin:0;padding:var(--refine-s3);color:var(--refine-text-tertiary);font:var(--refine-font-secondary);}
-.dsp-home-path{display:flex;align-items:center;gap:var(--refine-s2);}
-.dsp-home-path .rf-input{flex:1 1 auto;min-width:0;}
-.dsp-home-path .rf-btn{flex:none;}
-.dsp-home-selected{color:var(--refine-text-tertiary);font:var(--refine-font-caption);font-family:var(--refine-font-code);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.dsp-home-modes{display:flex;flex-wrap:wrap;gap:var(--refine-s2);}
-.dsp-home-mode{height:28px;box-sizing:border-box;padding:0 var(--refine-s3);border:var(--refine-hairline) solid var(--refine-border-2);border-radius:999px;background:none;color:var(--refine-text-secondary);font:var(--refine-font-secondary);cursor:pointer;transition:background-color 120ms var(--dsp-ease),color 120ms var(--dsp-ease);}
-.dsp-home-mode:hover{background:var(--refine-hover);color:var(--refine-text);}
-.dsp-home-mode[aria-checked="true"]{background:var(--refine-active);color:var(--refine-text);border-color:var(--refine-border-4);font:var(--refine-font-secondary-strong);}
-.dsp-home-mode:focus-visible{outline:var(--refine-focus-ring);outline-offset:1px;}
-.dsp-home-error{color:var(--refine-error);font:var(--refine-font-secondary);}
-.dsp-home-actions{display:flex;align-items:center;gap:var(--refine-s2);margin-top:var(--refine-s1);}
 /* A sleeping pane keeps its place and its Session id but drops the conversation tree. */
 .dsp-pane-sleep{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--refine-s2);padding:var(--refine-s4);color:var(--refine-text-tertiary);font:var(--refine-font-secondary);text-align:center;}
 
 /* ---------- quiet mode: one switch that stops decorative motion and heavy surfaces ---------- */
-html.rf-quiet .dsp-pane[data-animate],html.rf-quiet .dsp-pane,html.rf-quiet .dsp-home,html.rf-quiet .dsp-drop-hint,html.rf-quiet .dsp-drop-chip{animation:none;}
+html.rf-quiet .dsp-pane[data-animate],html.rf-quiet .dsp-pane,html.rf-quiet .dsp-drop-hint,html.rf-quiet .dsp-drop-chip{animation:none;}
 html.rf-quiet .rf-status-dot,html.rf-quiet .dsp-pane *{animation-play-state:paused;}
 html[data-rf-background] *{animation-play-state:paused !important;}
 @media (prefers-reduced-motion: reduce){
-.dsp-home{animation:none;}
 }
 @keyframes dsp-pane-in{from{opacity:0;transform:scale(.985);}}
 @keyframes dsp-fade-in{from{opacity:0;transform:translateY(4px);}}
